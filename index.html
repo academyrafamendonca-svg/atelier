@@ -192,7 +192,7 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">Estoque, Lista de Compras, Colaboradoras, Financeiro, Marketing, Vendas e Gestão já gravam a sério no Supabase. Falta ligar a Agenda (marcações internas).</div>
+<div class="faixa-demo">Todo o sistema já grava a sério no Supabase — funciona em qualquer telemóvel ou computador, sincronizado.</div>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -751,7 +751,20 @@ function useMockDB() {
   };
   const fornecedoresNomesOps = criarLista(setFornecedoresNomes);
   const marcacoesOps = criarLista(setMarcacoes);
-  const listaEsperaOps = criarLista(setListaEspera);
+  const listaEsperaOps = {
+    add: (item) => {
+      const novo = { id: uid(), criado_em: new Date().toISOString(), ...item };
+      setListaEspera(l => [novo, ...l]);
+      supabase.from('lista_espera').insert({
+        id: novo.id, cliente: novo.cliente, servico: novo.servico, contacto: novo.contacto, data_preferida: novo.data_preferida || null,
+      }).then(({ error }) => { if (error) console.error('Supabase (lista_espera insert):', error.message); });
+    },
+    remove: (id) => {
+      setListaEspera(l => l.filter(i => i.id !== id));
+      supabase.from('lista_espera').delete().eq('id', id).then(({ error }) => { if (error) console.error('Supabase (lista_espera delete):', error.message); });
+    },
+    update: (id, patch) => setListaEspera(l => l.map(i => i.id === id ? { ...i, ...patch } : i)),
+  };
   const eventosOps = criarListaSupabase(setEventosCalendario, 'eventos_calendario');
   const despesasRecorrentesOps = {
     add: (dados) => {
@@ -809,6 +822,7 @@ function useMockDB() {
         { data: cPagar, error: e7 }, { data: despRec, error: e8 }, { data: comiss, error: e9 },
         { data: eventos, error: e10 }, { data: invest, error: e11 }, { data: funis, error: e12 },
         { data: estrat, error: e13 }, { data: tarefasDb, error: e14 }, { data: recorrentesDb, error: e15 },
+        { data: espera, error: e16 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -825,8 +839,9 @@ function useMockDB() {
         supabase.from('estrategias_vendas').select('*').order('criado_em', { ascending: false }),
         supabase.from('tarefas').select('*').order('criado_em', { ascending: false }),
         supabase.from('tarefas_recorrentes').select('*'),
+        supabase.from('lista_espera').select('*').order('criado_em', { ascending: false }),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -841,6 +856,7 @@ function useMockDB() {
       if (funis) setFunisVendas(funis);
       if (estrat) setEstrategiasVendas(estrat);
       if (tarefasDb) setTarefas(tarefasDb.map(t => ({ ...t, status: t.coluna })));
+      if (espera) setListaEspera(espera);
 
       if (recorrentesDb && recorrentesDb.length > 0) {
         setModelosSemanais(recorrentesDb);

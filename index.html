@@ -192,7 +192,7 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">Estoque, Lista de Compras, Colaboradoras e Financeiro já gravam a sério no Supabase. O resto (Marketing, Vendas, Gestão) ainda vive só nesta sessão do browser.</div>
+<div class="faixa-demo">Estoque, Lista de Compras, Colaboradoras, Financeiro, Marketing, Vendas e Gestão já gravam a sério no Supabase. Falta ligar a Agenda (marcações internas).</div>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -396,24 +396,7 @@ function useMockDB() {
   const [comissoes, setComissoes] = useState([]);
   const [despesasRecorrentes, setDespesasRecorrentes] = useState([]);
   const [tarefas, setTarefas] = useState([]);
-  const [modelosSemanais, setModelosSemanais] = useState(() => {
-    function dataDia(diaSemanaAlvo) {
-      const d = new Date();
-      const diaAtual = d.getDay() === 0 ? 7 : d.getDay();
-      d.setDate(d.getDate() + (diaSemanaAlvo - diaAtual));
-      return d.toISOString().slice(0, 10);
-    }
-    const padrao = [
-      { titulo: 'Rever agenda e prioridades da semana', frequencia: 'semanal', data_referencia: dataDia(1), categoria: 'estrategia', urgencia: 'media' },
-      { titulo: 'Rever números e fechos de caixa', frequencia: 'quinzenal', data_referencia: dataDia(3), categoria: 'financeiro', urgencia: 'media' },
-      { titulo: 'Ponto de situação com a equipa', frequencia: 'mensal', data_referencia: hoje(), categoria: 'pessoas', urgencia: 'media' },
-      { titulo: 'Fechar contas e relatório da semana', frequencia: 'semanal', data_referencia: dataDia(6), categoria: 'financeiro', urgencia: 'alta' },
-      { titulo: 'Rever plano estratégico do trimestre', frequencia: 'trimestral', data_referencia: hoje(), categoria: 'estrategia', urgencia: 'media' },
-      { titulo: 'Avaliação de desempenho da equipa', frequencia: 'semestral', data_referencia: hoje(), categoria: 'pessoas', urgencia: 'media' },
-      { titulo: 'Renovar seguros e licenças', frequencia: 'anual', data_referencia: hoje(), categoria: 'operacoes', urgencia: 'alta' },
-    ];
-    return padrao.map(m => ({ id: uid(), ...m }));
-  });
+  const [modelosSemanais, setModelosSemanais] = useState([]);
 
   const nomeColaborador = (id) => COLABORADORES_DEMO.find(c => c.id === id)?.nome || '—';
   const nomeProduto = (id) => produtos.find(p => p.id === id)?.nome || '—';
@@ -727,15 +710,33 @@ function useMockDB() {
       update: (id, patch) => setter(s => s.map(i => i.id === id ? { ...i, ...patch } : i)),
     };
   }
+
+  function criarListaSupabase(setter, tabela) {
+    return {
+      add: (item) => {
+        const novo = { id: uid(), criado_em: new Date().toISOString(), ...item };
+        setter(s => [novo, ...s]);
+        supabase.from(tabela).insert(novo).then(({ error }) => { if (error) console.error(`Supabase (${tabela} insert):`, error.message); });
+      },
+      remove: (id) => {
+        setter(s => s.filter(i => i.id !== id));
+        supabase.from(tabela).delete().eq('id', id).then(({ error }) => { if (error) console.error(`Supabase (${tabela} delete):`, error.message); });
+      },
+      update: (id, patch) => {
+        setter(s => s.map(i => i.id === id ? { ...i, ...patch } : i));
+        supabase.from(tabela).update(patch).eq('id', id).then(({ error }) => { if (error) console.error(`Supabase (${tabela} update):`, error.message); });
+      },
+    };
+  }
   const canaisOps = criarLista(setCanaisAquisicao);
   const anunciosOps = criarLista(setAnuncios);
   const parceriasOps = criarLista(setParcerias);
   const influencersOps = criarLista(setInfluencers);
   const offlineOps = criarLista(setMarketingOffline);
   const indicacoesOps = criarLista(setIndicacoes);
-  const estrategiasOps = criarLista(setEstrategiasVendas);
-  const funisOps = criarLista(setFunisVendas);
-  const investimentosOps = criarLista(setInvestimentosExternos);
+  const estrategiasOps = criarListaSupabase(setEstrategiasVendas, 'estrategias_vendas');
+  const funisOps = criarListaSupabase(setFunisVendas, 'funis_vendas');
+  const investimentosOps = criarListaSupabase(setInvestimentosExternos, 'investimentos_externos');
   const colaboradorasNomesOps = {
     add: (dados) => {
       const novo = { id: uid(), ...dados };
@@ -751,7 +752,7 @@ function useMockDB() {
   const fornecedoresNomesOps = criarLista(setFornecedoresNomes);
   const marcacoesOps = criarLista(setMarcacoes);
   const listaEsperaOps = criarLista(setListaEspera);
-  const eventosOps = criarLista(setEventosCalendario);
+  const eventosOps = criarListaSupabase(setEventosCalendario, 'eventos_calendario');
   const despesasRecorrentesOps = {
     add: (dados) => {
       const novo = { id: uid(), ...dados };
@@ -768,12 +769,35 @@ function useMockDB() {
     },
   };
 
-  function criarTarefa(dados) { setTarefas(t => [{ id: uid(), status: 'a_fazer', ...dados, criado_em: new Date().toISOString() }, ...t]); }
-  function atualizarStatusTarefa(id, status) { setTarefas(t => t.map(item => item.id === id ? { ...item, status } : item)); }
+  function criarTarefa(dados) {
+    const nova = { id: uid(), status: 'a_fazer', ...dados, criado_em: new Date().toISOString() };
+    setTarefas(t => [nova, ...t]);
+    supabase.from('tarefas').insert({
+      id: nova.id, titulo: nova.titulo, responsavel_nome: nova.responsavel_nome, data_inicio: nova.data_inicio || null,
+      data_entrega: nova.data_entrega || null, urgencia: nova.urgencia, categoria: nova.categoria, coluna: nova.status,
+    }).then(({ error }) => { if (error) console.error('Supabase (tarefas insert):', error.message); });
+  }
+  function atualizarStatusTarefa(id, status) {
+    setTarefas(t => t.map(item => item.id === id ? { ...item, status } : item));
+    supabase.from('tarefas').update({ coluna: status }).eq('id', id).then(({ error }) => { if (error) console.error('Supabase (tarefas update):', error.message); });
+  }
 
-  function adicionarModeloSemanal(dados) { setModelosSemanais(m => [...m, { id: uid(), ...dados }]); }
-  function removerModeloSemanal(id) { setModelosSemanais(m => m.filter(x => x.id !== id)); }
-  function atualizarModeloSemanal(id, patch) { setModelosSemanais(m => m.map(x => x.id === id ? { ...x, ...patch } : x)); }
+  function adicionarModeloSemanal(dados) {
+    const novo = { id: uid(), ...dados };
+    setModelosSemanais(m => [...m, novo]);
+    supabase.from('tarefas_recorrentes').insert({
+      id: novo.id, titulo: novo.titulo, frequencia: novo.frequencia, data_referencia: novo.data_referencia,
+      categoria: novo.categoria, urgencia: novo.urgencia,
+    }).then(({ error }) => { if (error) console.error('Supabase (tarefas_recorrentes insert):', error.message); });
+  }
+  function removerModeloSemanal(id) {
+    setModelosSemanais(m => m.filter(x => x.id !== id));
+    supabase.from('tarefas_recorrentes').delete().eq('id', id).then(({ error }) => { if (error) console.error('Supabase (tarefas_recorrentes delete):', error.message); });
+  }
+  function atualizarModeloSemanal(id, patch) {
+    setModelosSemanais(m => m.map(x => x.id === id ? { ...x, ...patch } : x));
+    supabase.from('tarefas_recorrentes').update(patch).eq('id', id).then(({ error }) => { if (error) console.error('Supabase (tarefas_recorrentes update):', error.message); });
+  }
 
   const produtosEstoqueBaixo = produtos.filter(p => p.ativo && p.estoque_atual <= p.estoque_minimo);
 
@@ -783,6 +807,8 @@ function useMockDB() {
         { data: prods, error: e1 }, { data: lista, error: e2 }, { data: colabs, error: e3 },
         { data: mov, error: e4 }, { data: fechos, error: e5 }, { data: pendentes, error: e6 },
         { data: cPagar, error: e7 }, { data: despRec, error: e8 }, { data: comiss, error: e9 },
+        { data: eventos, error: e10 }, { data: invest, error: e11 }, { data: funis, error: e12 },
+        { data: estrat, error: e13 }, { data: tarefasDb, error: e14 }, { data: recorrentesDb, error: e15 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -793,8 +819,14 @@ function useMockDB() {
         supabase.from('contas_pagar').select('*').order('criado_em', { ascending: false }),
         supabase.from('despesas_recorrentes').select('*'),
         supabase.from('comissoes').select('*').order('criado_em', { ascending: false }),
+        supabase.from('eventos_calendario').select('*').order('data'),
+        supabase.from('investimentos_externos').select('*').order('criado_em', { ascending: false }),
+        supabase.from('funis_vendas').select('*').order('criado_em', { ascending: false }),
+        supabase.from('estrategias_vendas').select('*').order('criado_em', { ascending: false }),
+        supabase.from('tarefas').select('*').order('criado_em', { ascending: false }),
+        supabase.from('tarefas_recorrentes').select('*'),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -804,6 +836,35 @@ function useMockDB() {
       if (cPagar) setContasPagar(cPagar);
       if (despRec) setDespesasRecorrentes(despRec);
       if (comiss) setComissoes(comiss);
+      if (eventos) setEventosCalendario(eventos);
+      if (invest) setInvestimentosExternos(invest);
+      if (funis) setFunisVendas(funis);
+      if (estrat) setEstrategiasVendas(estrat);
+      if (tarefasDb) setTarefas(tarefasDb.map(t => ({ ...t, status: t.coluna })));
+
+      if (recorrentesDb && recorrentesDb.length > 0) {
+        setModelosSemanais(recorrentesDb);
+      } else {
+        function dataDia(diaSemanaAlvo) {
+          const d = new Date();
+          const diaAtual = d.getDay() === 0 ? 7 : d.getDay();
+          d.setDate(d.getDate() + (diaSemanaAlvo - diaAtual));
+          return d.toISOString().slice(0, 10);
+        }
+        const padrao = [
+          { titulo: 'Rever agenda e prioridades da semana', frequencia: 'semanal', data_referencia: dataDia(1), categoria: 'estrategia', urgencia: 'media' },
+          { titulo: 'Rever números e fechos de caixa', frequencia: 'quinzenal', data_referencia: dataDia(3), categoria: 'financeiro', urgencia: 'media' },
+          { titulo: 'Ponto de situação com a equipa', frequencia: 'mensal', data_referencia: hoje(), categoria: 'pessoas', urgencia: 'media' },
+          { titulo: 'Fechar contas e relatório da semana', frequencia: 'semanal', data_referencia: dataDia(6), categoria: 'financeiro', urgencia: 'alta' },
+          { titulo: 'Rever plano estratégico do trimestre', frequencia: 'trimestral', data_referencia: hoje(), categoria: 'estrategia', urgencia: 'media' },
+          { titulo: 'Avaliação de desempenho da equipa', frequencia: 'semestral', data_referencia: hoje(), categoria: 'pessoas', urgencia: 'media' },
+          { titulo: 'Renovar seguros e licenças', frequencia: 'anual', data_referencia: hoje(), categoria: 'operacoes', urgencia: 'alta' },
+        ];
+        const comId = padrao.map(m => ({ id: uid(), ...m }));
+        setModelosSemanais(comId);
+        supabase.from('tarefas_recorrentes').insert(comId).then(({ error }) => { if (error) console.error('Supabase (tarefas_recorrentes seed):', error.message); });
+      }
+
       setCarregadoDoSupabase(true);
     }
     carregar();

@@ -192,7 +192,7 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">Estoque, Lista de Compras e Colaboradoras já gravam a sério no Supabase. O resto (Financeiro, Marketing, Vendas, Gestão) ainda vive só nesta sessão do browser.</div>
+<div class="faixa-demo">Estoque, Lista de Compras, Colaboradoras e Financeiro já gravam a sério no Supabase. O resto (Marketing, Vendas, Gestão) ainda vive só nesta sessão do browser.</div>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -236,6 +236,84 @@ async function supaInsertColaboradora(c) {
 async function supaDeleteColaboradora(id) {
   const { error } = await supabase.from('colaboradoras_nomes').delete().eq('id', id);
   if (error) console.error('Supabase (colaboradoras_nomes delete):', error.message);
+}
+
+async function supaInsertFinanceiro(mov) {
+  const { error } = await supabase.from('financeiro_movimentos').insert({
+    id: mov.id, tipo: mov.tipo, categoria: mov.categoria, valor: mov.valor, descricao: mov.descricao,
+    produto_id: mov.produto_id || null, origem: mov.origem, canal_pagamento: mov.canal_pagamento,
+    criado_por: mov.criado_por || null, data: mov.data,
+  });
+  if (error) console.error('Supabase (financeiro insert):', error.message);
+}
+async function supaDeleteFinanceiro(id) {
+  const { error } = await supabase.from('financeiro_movimentos').delete().eq('id', id);
+  if (error) console.error('Supabase (financeiro delete):', error.message);
+}
+async function supaDeleteFinanceiroOrigemData(origem, data) {
+  const { error } = await supabase.from('financeiro_movimentos').delete().match({ origem, data });
+  if (error) console.error('Supabase (financeiro delete by origem/data):', error.message);
+}
+async function supaInsertFechoCaixa(f) {
+  const { error } = await supabase.from('fechos_caixa').insert({
+    id: f.id, data: f.data, dinheiro: f.dinheiro, cartao: f.cartao, online: f.online, criado_por: f.criado_por || null,
+  });
+  if (error) console.error('Supabase (fechos_caixa insert):', error.message);
+}
+async function supaDeleteFechoCaixaByData(data) {
+  const { error } = await supabase.from('fechos_caixa').delete().eq('data', data);
+  if (error) console.error('Supabase (fechos_caixa delete):', error.message);
+}
+async function supaInsertPendente(p) {
+  const { error } = await supabase.from('pendentes_pagamento').insert({
+    id: p.id, nome: p.nome, valor: p.valor, contacto: p.contacto, data_prevista: p.data_prevista || null,
+    status: p.status, criado_por: p.criado_por || null,
+  });
+  if (error) console.error('Supabase (pendentes_pagamento insert):', error.message);
+}
+async function supaUpdatePendente(id, patch) {
+  const { error } = await supabase.from('pendentes_pagamento').update(patch).eq('id', id);
+  if (error) console.error('Supabase (pendentes_pagamento update):', error.message);
+}
+async function supaInsertContaPagar(c) {
+  const { error } = await supabase.from('contas_pagar').insert({
+    id: c.id, fornecedor: c.fornecedor, categoria: c.categoria, valor: c.valor,
+    data_vencimento: c.data_vencimento || null, status: c.status, criado_por: c.criado_por || null,
+  });
+  if (error) console.error('Supabase (contas_pagar insert):', error.message);
+}
+async function supaUpdateContaPagar(id, patch) {
+  const { error } = await supabase.from('contas_pagar').update(patch).eq('id', id);
+  if (error) console.error('Supabase (contas_pagar update):', error.message);
+}
+async function supaDeleteContaPagar(id) {
+  const { error } = await supabase.from('contas_pagar').delete().eq('id', id);
+  if (error) console.error('Supabase (contas_pagar delete):', error.message);
+}
+async function supaInsertDespesaRecorrente(d) {
+  const { error } = await supabase.from('despesas_recorrentes').insert({
+    id: d.id, fornecedor: d.fornecedor, categoria: d.categoria, valor: d.valor, dia_mes: d.dia_mes, ativo: d.ativo,
+  });
+  if (error) console.error('Supabase (despesas_recorrentes insert):', error.message);
+}
+async function supaUpdateDespesaRecorrente(id, patch) {
+  const { error } = await supabase.from('despesas_recorrentes').update(patch).eq('id', id);
+  if (error) console.error('Supabase (despesas_recorrentes update):', error.message);
+}
+async function supaDeleteDespesaRecorrente(id) {
+  const { error } = await supabase.from('despesas_recorrentes').delete().eq('id', id);
+  if (error) console.error('Supabase (despesas_recorrentes delete):', error.message);
+}
+async function supaInsertComissao(c) {
+  const { error } = await supabase.from('comissoes').insert({
+    id: c.id, profissional: c.profissional, mes: c.mes, faturacao_bruto: c.faturacao_bruto,
+    status: c.status, criado_por: c.criado_por || null,
+  });
+  if (error) console.error('Supabase (comissoes insert):', error.message);
+}
+async function supaUpdateComissao(id, patch) {
+  const { error } = await supabase.from('comissoes').update(patch).eq('id', id);
+  if (error) console.error('Supabase (comissoes update):', error.message);
 }
 
 const AREAS = [
@@ -415,7 +493,9 @@ function useMockDB() {
     const custoFinal = Number(custo) || 0;
     setAlicatesAfiar(a => a.map(x => x.id === id ? { ...x, status: 'entregue_amolador', data_entregue_amolador: hoje(), pago: !!jaPago, custo: jaPago ? custoFinal : x.custo, canal_pagamento: jaPago ? canalPagamento : x.canal_pagamento } : x));
     if (jaPago && custoFinal > 0) {
-      setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() }, ...f]);
+      const mov = { id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() };
+      setFinanceiro(f => [mov, ...f]);
+      supaInsertFinanceiro(mov);
     }
   }
 
@@ -429,7 +509,9 @@ function useMockDB() {
     const custoFinal = item?.pago ? Number(item.custo) || 0 : Number(custo) || 0;
     setAlicatesAfiar(a => a.map(x => x.id === id ? { ...x, status: 'confirmado', data_confirmado: dataFinal, custo: custoFinal, canal_pagamento: x.pago ? x.canal_pagamento : canalPagamento } : x));
     if (!item?.pago && custoFinal > 0) {
-      setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: dataFinal }, ...f]);
+      const mov = { id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: dataFinal };
+      setFinanceiro(f => [mov, ...f]);
+      supaInsertFinanceiro(mov);
     }
   }
 
@@ -452,7 +534,9 @@ function useMockDB() {
   }
 
   function adicionarComissao({ profissional, mes, faturacaoBruto, criadoPor }) {
-    setComissoes(c => [{ id: uid(), profissional, mes, faturacao_bruto: faturacaoBruto, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() }, ...c]);
+    const item = { id: uid(), profissional, mes, faturacao_bruto: faturacaoBruto, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() };
+    setComissoes(c => [item, ...c]);
+    supaInsertComissao(item);
   }
 
   function primeiroDiaProximoMes(mesStr) {
@@ -468,14 +552,18 @@ function useMockDB() {
     const dataPagamento = primeiroDiaProximoMes(item.mes);
     const movId = uid();
     setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId } : x));
-    setFinanceiro(f => [{ id: movId, tipo: 'saida', categoria: 'Comissão', valor: valorComissao, descricao: `Comissão ${item.profissional} — ${item.mes}`, origem: 'comissao', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: dataPagamento }, ...f]);
+    supaUpdateComissao(id, { status: 'pago', canal_pagamento: canalPagamento });
+    const mov = { id: movId, tipo: 'saida', categoria: 'Comissão', valor: valorComissao, descricao: `Comissão ${item.profissional} — ${item.mes}`, origem: 'comissao', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: dataPagamento };
+    setFinanceiro(f => [mov, ...f]);
+    supaInsertFinanceiro(mov);
   }
 
   function desfazerComissaoPaga(id) {
     const item = comissoes.find(c => c.id === id);
     if (!item) return;
-    if (item.movimento_id) setFinanceiro(f => f.filter(m => m.id !== item.movimento_id));
+    if (item.movimento_id) { setFinanceiro(f => f.filter(m => m.id !== item.movimento_id)); supaDeleteFinanceiro(item.movimento_id); }
     setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pendente', canal_pagamento: null, movimento_id: null } : x));
+    supaUpdateComissao(id, { status: 'pendente', canal_pagamento: null });
   }
 
   function registarCompra({ produtoId, listaCompraId, quantidade, precoUnitario, compradoPor, data, dataPrevistaEntrega, fornecedor, jaPago, canalPagamento }) {
@@ -488,9 +576,11 @@ function useMockDB() {
       if (pendentesDoProduto[0]) linkId = pendentesDoProduto[0].id;
     }
     setCompras(c => [{ id: compraId, produto_id: produtoId, lista_compra_id: linkId, fornecedor: fornecedor || '', quantidade, preco_unitario: precoUnitario, preco_total: precoTotal, comprado_por: compradoPor, canal_pagamento: jaPago ? canalPagamento : null, pago: !!jaPago, data_compra: dataCompra, data_prevista_entrega: dataPrevistaEntrega || null, recebido: false, confirmado_por: null, confirmado_em: null }, ...c]);
-    if (linkId) setListaCompras(l => l.map(item => item.id === linkId ? { ...item, status: 'encomendado' } : item));
+    if (linkId) { setListaCompras(l => l.map(item => item.id === linkId ? { ...item, status: 'encomendado' } : item)); supaUpdateListaCompra(linkId, { status: 'encomendado' }); }
     if (jaPago) {
-      setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Materiais', valor: precoTotal, descricao: `Compra de ${quantidade} x ${nomeProduto(produtoId)} — ${fornecedor || 'fornecedor não indicado'} (a caminho)`, produto_id: produtoId, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: compradoPor, data: dataCompra }, ...f]);
+      const mov = { id: uid(), tipo: 'saida', categoria: 'Materiais', valor: precoTotal, descricao: `Compra de ${quantidade} x ${nomeProduto(produtoId)} — ${fornecedor || 'fornecedor não indicado'} (a caminho)`, produto_id: produtoId, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: compradoPor, data: dataCompra };
+      setFinanceiro(f => [mov, ...f]);
+      supaInsertFinanceiro(mov);
     }
   }
 
@@ -502,7 +592,9 @@ function useMockDB() {
     setProdutos(ps => ps.map(p => p.id === compra.produto_id ? { ...p, estoque_atual: novoValor } : p));
     supaUpdateEstoque(compra.produto_id, novoValor);
     if (!compra.pago) {
-      setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Materiais', valor: compra.preco_total, descricao: `Compra de ${compra.quantidade} x ${nomeProduto(compra.produto_id)} — ${compra.fornecedor || 'fornecedor não indicado'}`, produto_id: compra.produto_id, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() }, ...f]);
+      const mov = { id: uid(), tipo: 'saida', categoria: 'Materiais', valor: compra.preco_total, descricao: `Compra de ${compra.quantidade} x ${nomeProduto(compra.produto_id)} — ${compra.fornecedor || 'fornecedor não indicado'}`, produto_id: compra.produto_id, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() };
+      setFinanceiro(f => [mov, ...f]);
+      supaInsertFinanceiro(mov);
     }
     setCompras(c => c.map(item => item.id === compraId ? { ...item, recebido: true, canal_pagamento: item.pago ? item.canal_pagamento : canalPagamento, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() } : item));
     if (compra.lista_compra_id) {
@@ -515,8 +607,12 @@ function useMockDB() {
     // remove fecho anterior do mesmo dia, e os movimentos financeiros que ele tinha criado
     setFechosCaixa(fs => fs.filter(f => f.data !== data));
     setFinanceiro(f => f.filter(m => !(m.origem === 'fecho_caixa' && m.data === data)));
+    supaDeleteFechoCaixaByData(data);
+    supaDeleteFinanceiroOrigemData('fecho_caixa', data);
 
-    setFechosCaixa(fs => [{ id: uid(), data, dinheiro, cartao, online, criado_por: criadoPor, criado_em: new Date().toISOString() }, ...fs]);
+    const novoFecho = { id: uid(), data, dinheiro, cartao, online, criado_por: criadoPor, criado_em: new Date().toISOString() };
+    setFechosCaixa(fs => [novoFecho, ...fs]);
+    supaInsertFechoCaixa(novoFecho);
 
     const canais = [
       { valor: dinheiro, categoria: 'Dinheiro' },
@@ -525,13 +621,17 @@ function useMockDB() {
     ];
     canais.forEach(c => {
       if (c.valor > 0) {
-        setFinanceiro(f => [{ id: uid(), tipo: 'entrada', categoria: c.categoria, valor: c.valor, descricao: `Fecho de caixa — ${c.categoria}`, origem: 'fecho_caixa', criado_por: criadoPor, data }, ...f]);
+        const mov = { id: uid(), tipo: 'entrada', categoria: c.categoria, valor: c.valor, descricao: `Fecho de caixa — ${c.categoria}`, origem: 'fecho_caixa', criado_por: criadoPor, data };
+        setFinanceiro(f => [mov, ...f]);
+        supaInsertFinanceiro(mov);
       }
     });
   }
 
   function adicionarPendente({ nome, valor, dataPrevista, contacto, criadoPor }) {
-    setPendentesPagamento(p => [{ id: uid(), nome, valor, data_prevista: dataPrevista, contacto, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() }, ...p]);
+    const item = { id: uid(), nome, valor, data_prevista: dataPrevista, contacto, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() };
+    setPendentesPagamento(p => [item, ...p]);
+    supaInsertPendente(item);
   }
 
   function marcarPendenteComoPago(id, canal) {
@@ -539,26 +639,34 @@ function useMockDB() {
     if (!item) return;
     const movId = uid();
     setPendentesPagamento(p => p.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canal, movimento_id: movId, data_pagamento: hoje() } : x));
-    setFinanceiro(f => [{ id: movId, tipo: 'entrada', categoria: canal || 'Pendente recebido', valor: item.valor, descricao: `${item.nome} — pagamento recebido (${canal})`, origem: 'pendente', criado_por: item.criado_por, data: hoje() }, ...f]);
+    supaUpdatePendente(id, { status: 'pago', canal_pagamento: canal, movimento_id: movId, data_pagamento: hoje() });
+    const mov = { id: movId, tipo: 'entrada', categoria: canal || 'Pendente recebido', valor: item.valor, descricao: `${item.nome} — pagamento recebido (${canal})`, origem: 'pendente', criado_por: item.criado_por, data: hoje() };
+    setFinanceiro(f => [mov, ...f]);
+    supaInsertFinanceiro(mov);
   }
 
   function desfazerPendentePago(id) {
     const item = pendentesPagamento.find(p => p.id === id);
     if (!item) return;
-    if (item.movimento_id) setFinanceiro(f => f.filter(m => m.id !== item.movimento_id));
+    if (item.movimento_id) { setFinanceiro(f => f.filter(m => m.id !== item.movimento_id)); supaDeleteFinanceiro(item.movimento_id); }
     setPendentesPagamento(p => p.map(x => x.id === id ? { ...x, status: 'pendente', canal_pagamento: null, movimento_id: null } : x));
+    supaUpdatePendente(id, { status: 'pendente', canal_pagamento: null, movimento_id: null });
   }
 
   function adicionarContaPagar({ fornecedor, categoria, valor, dataVencimento, criadoPor }) {
-    setContasPagar(c => [{ id: uid(), fornecedor, categoria, valor, data_vencimento: dataVencimento, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() }, ...c]);
+    const item = { id: uid(), fornecedor, categoria, valor, data_vencimento: dataVencimento, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() };
+    setContasPagar(c => [item, ...c]);
+    supaInsertContaPagar(item);
   }
 
   function atualizarContaPagar(id, patch) {
     setContasPagar(c => c.map(item => item.id === id ? { ...item, ...patch } : item));
+    supaUpdateContaPagar(id, patch);
   }
 
   function removerContaPagar(id) {
     setContasPagar(c => c.filter(item => item.id !== id));
+    supaDeleteContaPagar(id);
   }
 
   function gerarContasRecorrentesDoMes() {
@@ -568,7 +676,9 @@ function useMockDB() {
       if (!jaExiste) {
         const diaStr = String(d.dia_mes).padStart(2, '0');
         const vencimento = `${mesAtual}-${diaStr}`;
-        setContasPagar(c => [{ id: uid(), fornecedor: d.fornecedor, categoria: d.categoria, valor: d.valor, data_vencimento: vencimento, status: 'pendente', criado_por: null, criado_em: new Date().toISOString() }, ...c]);
+        const item = { id: uid(), fornecedor: d.fornecedor, categoria: d.categoria, valor: d.valor, data_vencimento: vencimento, status: 'pendente', criado_por: null, criado_em: new Date().toISOString() };
+        setContasPagar(c => [item, ...c]);
+        supaInsertContaPagar(item);
       }
     });
   }
@@ -578,25 +688,33 @@ function useMockDB() {
     if (!item) return;
     const movId = uid();
     setContasPagar(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId, data_pagamento: hoje() } : x));
-    setFinanceiro(f => [{ id: movId, tipo: 'saida', categoria: item.categoria || 'Extras', valor: item.valor, descricao: `${item.fornecedor} — conta paga`, origem: 'conta_pagar', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: hoje() }, ...f]);
+    supaUpdateContaPagar(id, { status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId, data_pagamento: hoje() });
+    const mov = { id: movId, tipo: 'saida', categoria: item.categoria || 'Extras', valor: item.valor, descricao: `${item.fornecedor} — conta paga`, origem: 'conta_pagar', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: hoje() };
+    setFinanceiro(f => [mov, ...f]);
+    supaInsertFinanceiro(mov);
   }
 
   function desfazerContaPaga(id) {
     const item = contasPagar.find(c => c.id === id);
     if (!item) return;
-    if (item.movimento_id) setFinanceiro(f => f.filter(m => m.id !== item.movimento_id));
+    if (item.movimento_id) { setFinanceiro(f => f.filter(m => m.id !== item.movimento_id)); supaDeleteFinanceiro(item.movimento_id); }
     setContasPagar(c => c.map(x => x.id === id ? { ...x, status: 'pendente', canal_pagamento: null, movimento_id: null } : x));
+    supaUpdateContaPagar(id, { status: 'pendente', canal_pagamento: null, movimento_id: null });
   }
 
   function lancarMovimentoManual({ tipo, categoria, valor, descricao, criadoPor, canalPagamento, data }) {
-    setFinanceiro(f => [{ id: uid(), tipo, categoria, valor, descricao, origem: 'manual', canal_pagamento: canalPagamento, criado_por: criadoPor, data: data || hoje() }, ...f]);
+    const mov = { id: uid(), tipo, categoria, valor, descricao, origem: 'manual', canal_pagamento: canalPagamento, criado_por: criadoPor, data: data || hoje() };
+    setFinanceiro(f => [mov, ...f]);
+    supaInsertFinanceiro(mov);
   }
 
   function registarVenda({ servico, cliente, valor, forma_pagamento, atendidoPor, data }) {
     const dataVenda = data || hoje();
     const vendaId = uid();
     setVendas(v => [{ id: vendaId, servico, cliente, valor, forma_pagamento, atendido_por: atendidoPor, data: dataVenda }, ...v]);
-    setFinanceiro(f => [{ id: uid(), tipo: 'entrada', categoria: 'Vendas', valor, descricao: servico + (cliente ? ' — ' + cliente : ''), origem: 'venda', criado_por: atendidoPor, data: dataVenda }, ...f]);
+    const mov = { id: uid(), tipo: 'entrada', categoria: 'Vendas', valor, descricao: servico + (cliente ? ' — ' + cliente : ''), origem: 'venda', criado_por: atendidoPor, data: dataVenda };
+    setFinanceiro(f => [mov, ...f]);
+    supaInsertFinanceiro(mov);
   }
 
   function criarConteudo(dados) { setConteudos(c => [{ id: uid(), status: 'planeado', ...dados, criado_em: new Date().toISOString() }, ...c]); }
@@ -634,7 +752,21 @@ function useMockDB() {
   const marcacoesOps = criarLista(setMarcacoes);
   const listaEsperaOps = criarLista(setListaEspera);
   const eventosOps = criarLista(setEventosCalendario);
-  const despesasRecorrentesOps = criarLista(setDespesasRecorrentes);
+  const despesasRecorrentesOps = {
+    add: (dados) => {
+      const novo = { id: uid(), ...dados };
+      setDespesasRecorrentes(d => [novo, ...d]);
+      supaInsertDespesaRecorrente(novo);
+    },
+    update: (id, patch) => {
+      setDespesasRecorrentes(d => d.map(x => x.id === id ? { ...x, ...patch } : x));
+      supaUpdateDespesaRecorrente(id, patch);
+    },
+    remove: (id) => {
+      setDespesasRecorrentes(d => d.filter(x => x.id !== id));
+      supaDeleteDespesaRecorrente(id);
+    },
+  };
 
   function criarTarefa(dados) { setTarefas(t => [{ id: uid(), status: 'a_fazer', ...dados, criado_em: new Date().toISOString() }, ...t]); }
   function atualizarStatusTarefa(id, status) { setTarefas(t => t.map(item => item.id === id ? { ...item, status } : item)); }
@@ -647,17 +779,31 @@ function useMockDB() {
 
   useEffect(() => {
     async function carregar() {
-      const [{ data: prods, error: e1 }, { data: lista, error: e2 }, { data: colabs, error: e3 }] = await Promise.all([
+      const [
+        { data: prods, error: e1 }, { data: lista, error: e2 }, { data: colabs, error: e3 },
+        { data: mov, error: e4 }, { data: fechos, error: e5 }, { data: pendentes, error: e6 },
+        { data: cPagar, error: e7 }, { data: despRec, error: e8 }, { data: comiss, error: e9 },
+      ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
         supabase.from('colaboradoras_nomes').select('*').order('nome'),
+        supabase.from('financeiro_movimentos').select('*').order('data', { ascending: false }),
+        supabase.from('fechos_caixa').select('*').order('data', { ascending: false }),
+        supabase.from('pendentes_pagamento').select('*').order('criado_em', { ascending: false }),
+        supabase.from('contas_pagar').select('*').order('criado_em', { ascending: false }),
+        supabase.from('despesas_recorrentes').select('*'),
+        supabase.from('comissoes').select('*').order('criado_em', { ascending: false }),
       ]);
-      if (e1) console.error('Supabase (produtos load):', e1.message);
-      if (e2) console.error('Supabase (lista_compras load):', e2.message);
-      if (e3) console.error('Supabase (colaboradoras_nomes load):', e3.message);
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
+      if (mov) setFinanceiro(mov);
+      if (fechos) setFechosCaixa(fechos);
+      if (pendentes) setPendentesPagamento(pendentes);
+      if (cPagar) setContasPagar(cPagar);
+      if (despRec) setDespesasRecorrentes(despRec);
+      if (comiss) setComissoes(comiss);
       setCarregadoDoSupabase(true);
     }
     carregar();

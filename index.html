@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --cor-fundo: #FFFFFF;
@@ -191,11 +192,51 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">MODO DEMO — dados guardados só nesta sessão do browser. Quando ligares ao Supabase isto passa a gravar a sério.</div>
+<div class="faixa-demo">Estoque, Lista de Compras e Colaboradoras já gravam a sério no Supabase. O resto (Financeiro, Marketing, Vendas, Gestão) ainda vive só nesta sessão do browser.</div>
 <div id="root"></div>
 
 <script type="text/babel">
 const { useState, useEffect, useContext, createContext, useRef } = React;
+
+/* ============================ SUPABASE ============================ */
+const SUPABASE_URL = 'https://icyxwjuhzvnfafecfsqr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NhyVKDPgpOW75gM7U8skIA_Lziamdxq';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+async function supaInsertProduto(p) {
+  const { error } = await supabase.from('produtos').insert({
+    id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade,
+    estoque_minimo: p.estoque_minimo, estoque_atual: p.estoque_atual, ativo: p.ativo,
+  });
+  if (error) console.error('Supabase (produtos insert):', error.message);
+}
+async function supaUpdateEstoque(produtoId, novoValor) {
+  const { error } = await supabase.from('produtos').update({ estoque_atual: novoValor }).eq('id', produtoId);
+  if (error) console.error('Supabase (produtos update):', error.message);
+}
+async function supaInsertListaCompra(item) {
+  const { error } = await supabase.from('lista_compras').insert({
+    id: item.id, produto_id: item.produto_id, quantidade_solicitada: item.quantidade_solicitada,
+    solicitado_por_nome: item.solicitado_por_nome, urgencia: item.urgencia, status: item.status,
+  });
+  if (error) console.error('Supabase (lista_compras insert):', error.message);
+}
+async function supaUpdateListaCompra(id, patch) {
+  const { error } = await supabase.from('lista_compras').update(patch).eq('id', id);
+  if (error) console.error('Supabase (lista_compras update):', error.message);
+}
+async function supaDeleteListaCompra(id) {
+  const { error } = await supabase.from('lista_compras').delete().eq('id', id);
+  if (error) console.error('Supabase (lista_compras delete):', error.message);
+}
+async function supaInsertColaboradora(c) {
+  const { error } = await supabase.from('colaboradoras_nomes').insert({ id: c.id, nome: c.nome });
+  if (error) console.error('Supabase (colaboradoras_nomes insert):', error.message);
+}
+async function supaDeleteColaboradora(id) {
+  const { error } = await supabase.from('colaboradoras_nomes').delete().eq('id', id);
+  if (error) console.error('Supabase (colaboradoras_nomes delete):', error.message);
+}
 
 const AREAS = [
   { key: 'Agenda', label: 'Agenda' },
@@ -245,13 +286,8 @@ function hoje() { return new Date().toISOString().slice(0, 10); }
 
 /* ============================ DADOS (mock em memória) ============================ */
 function useMockDB() {
-  const [produtos, setProdutos] = useState([
-    { id: uid(), nome: 'Verniz Gel Vermelho', categoria: 'Vernizes', unidade: 'un', estoque_minimo: 2, estoque_atual: 5, ativo: true },
-    { id: uid(), nome: 'Algodão Descartável', categoria: 'Descartáveis', unidade: 'pacote', estoque_minimo: 3, estoque_atual: 1, ativo: true },
-    { id: uid(), nome: 'Lima de Unhas 180/240', categoria: 'Ferramentas', unidade: 'un', estoque_minimo: 10, estoque_atual: 12, ativo: true },
-    { id: uid(), nome: 'Álcool 70º', categoria: 'Limpeza', unidade: 'l', estoque_minimo: 2, estoque_atual: 0.5, ativo: true },
-    { id: uid(), nome: 'Top Coat', categoria: 'Vernizes', unidade: 'un', estoque_minimo: 2, estoque_atual: 3, ativo: true },
-  ]);
+  const [produtos, setProdutos] = useState([]);
+  const [carregadoDoSupabase, setCarregadoDoSupabase] = useState(false);
   const [listaCompras, setListaCompras] = useState([]);
   const [compras, setCompras] = useState([]);
   const [saidasEstoque, setSaidasEstoque] = useState([]);
@@ -306,7 +342,9 @@ function useMockDB() {
   const unidadeProduto = (id) => produtos.find(p => p.id === id)?.unidade || '';
 
   function pedirReposicao(produtoId, quantidade, solicitadoPorNome, urgencia) {
-    setListaCompras(l => [{ id: uid(), produto_id: produtoId, quantidade_solicitada: quantidade, solicitado_por_nome: solicitadoPorNome, urgencia: urgencia || 'nao_urgente', status: 'pendente', criado_em: new Date().toISOString() }, ...l]);
+    const item = { id: uid(), produto_id: produtoId, quantidade_solicitada: quantidade, solicitado_por_nome: solicitadoPorNome, urgencia: urgencia || 'nao_urgente', status: 'pendente', criado_em: new Date().toISOString() };
+    setListaCompras(l => [item, ...l]);
+    supaInsertListaCompra(item);
   }
 
   function adicionarProdutoEmFalta({ nome, quantidade, solicitadoPorNome, urgencia }) {
@@ -317,34 +355,51 @@ function useMockDB() {
       return;
     }
     const novoId = uid();
-    setProdutos(ps => [...ps, { id: novoId, nome: nomeTrim, categoria: 'Geral', unidade: 'un', estoque_minimo: 0, estoque_atual: 0, ativo: true }]);
-    setListaCompras(l => [{ id: uid(), produto_id: novoId, quantidade_solicitada: quantidade, solicitado_por_nome: solicitadoPorNome, urgencia: urgencia || 'nao_urgente', status: 'pendente', criado_em: new Date().toISOString() }, ...l]);
+    const novoProduto = { id: novoId, nome: nomeTrim, categoria: 'Geral', unidade: 'un', estoque_minimo: 0, estoque_atual: 0, ativo: true };
+    setProdutos(ps => [...ps, novoProduto]);
+    supaInsertProduto(novoProduto);
+    const item = { id: uid(), produto_id: novoId, quantidade_solicitada: quantidade, solicitado_por_nome: solicitadoPorNome, urgencia: urgencia || 'nao_urgente', status: 'pendente', criado_em: new Date().toISOString() };
+    setListaCompras(l => [item, ...l]);
+    supaInsertListaCompra(item);
   }
 
   function cancelarPedido(id) {
     setListaCompras(l => l.map(item => item.id === id ? { ...item, status: 'cancelado' } : item));
+    supaUpdateListaCompra(id, { status: 'cancelado' });
   }
 
   function removerItemLista(id) {
     setListaCompras(l => l.filter(item => item.id !== id));
+    supaDeleteListaCompra(id);
   }
 
   function registarSaidaEstoque({ produtoId, quantidade, retiradoPorNome, paraEquipa, data }) {
     const dataSaida = data || hoje();
     setSaidasEstoque(s => [{ id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: paraEquipa ? null : retiradoPorNome, para_equipa: !!paraEquipa, data: dataSaida, criado_em: new Date().toISOString() }, ...s]);
-    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: Math.max(0, p.estoque_atual - Number(quantidade)) } : p));
+    const produtoAtual = produtos.find(p => p.id === produtoId);
+    const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
+    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
+    supaUpdateEstoque(produtoId, novoValor);
   }
 
   function entregarDoEstoque({ listaCompraId, produtoId, quantidade, entreguePor }) {
     setEntregasEstoque(e => [{ id: uid(), produto_id: produtoId, lista_compra_id: listaCompraId, quantidade, entregue_por: entreguePor, data_entrega: hoje(), recebido: false, confirmado_por: null, confirmado_em: null }, ...e]);
-    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: Math.max(0, p.estoque_atual - Number(quantidade)) } : p));
+    const produtoAtual = produtos.find(p => p.id === produtoId);
+    const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
+    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
+    supaUpdateEstoque(produtoId, novoValor);
     setListaCompras(l => l.map(item => item.id === listaCompraId ? { ...item, status: 'entregue' } : item));
+    supaUpdateListaCompra(listaCompraId, { status: 'entregue' });
   }
 
   function resolverPedidoNaSaida({ listaCompraId, produtoId, quantidade, retiradoPorNome }) {
     setSaidasEstoque(s => [{ id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: retiradoPorNome, para_equipa: false, data: hoje(), criado_em: new Date().toISOString() }, ...s]);
-    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: Math.max(0, p.estoque_atual - Number(quantidade)) } : p));
+    const produtoAtual = produtos.find(p => p.id === produtoId);
+    const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
+    setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
+    supaUpdateEstoque(produtoId, novoValor);
     setListaCompras(l => l.map(item => item.id === listaCompraId ? { ...item, status: 'entregue' } : item));
+    supaUpdateListaCompra(listaCompraId, { status: 'entregue' });
   }
 
   function confirmarRecebimentoEstoque(entregaId, confirmadoPor) {
@@ -442,12 +497,18 @@ function useMockDB() {
   function confirmarChegadaCompra(compraId, confirmadoPor, canalPagamento) {
     const compra = compras.find(c => c.id === compraId);
     if (!compra || compra.recebido) return;
-    setProdutos(ps => ps.map(p => p.id === compra.produto_id ? { ...p, estoque_atual: p.estoque_atual + compra.quantidade } : p));
+    const produtoAtual = produtos.find(p => p.id === compra.produto_id);
+    const novoValor = (produtoAtual?.estoque_atual || 0) + compra.quantidade;
+    setProdutos(ps => ps.map(p => p.id === compra.produto_id ? { ...p, estoque_atual: novoValor } : p));
+    supaUpdateEstoque(compra.produto_id, novoValor);
     if (!compra.pago) {
       setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Materiais', valor: compra.preco_total, descricao: `Compra de ${compra.quantidade} x ${nomeProduto(compra.produto_id)} — ${compra.fornecedor || 'fornecedor não indicado'}`, produto_id: compra.produto_id, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() }, ...f]);
     }
     setCompras(c => c.map(item => item.id === compraId ? { ...item, recebido: true, canal_pagamento: item.pago ? item.canal_pagamento : canalPagamento, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() } : item));
-    if (compra.lista_compra_id) setListaCompras(l => l.map(item => item.id === compra.lista_compra_id ? { ...item, status: 'em_estoque' } : item));
+    if (compra.lista_compra_id) {
+      setListaCompras(l => l.map(item => item.id === compra.lista_compra_id ? { ...item, status: 'em_estoque' } : item));
+      supaUpdateListaCompra(compra.lista_compra_id, { status: 'em_estoque' });
+    }
   }
 
   function lancarFechoCaixa({ data, dinheiro, cartao, online, criadoPor }) {
@@ -557,7 +618,18 @@ function useMockDB() {
   const estrategiasOps = criarLista(setEstrategiasVendas);
   const funisOps = criarLista(setFunisVendas);
   const investimentosOps = criarLista(setInvestimentosExternos);
-  const colaboradorasNomesOps = criarLista(setColaboradorasNomes);
+  const colaboradorasNomesOps = {
+    add: (dados) => {
+      const novo = { id: uid(), ...dados };
+      setColaboradorasNomes(c => [...c, novo]);
+      supaInsertColaboradora(novo);
+    },
+    remove: (id) => {
+      setColaboradorasNomes(c => c.filter(x => x.id !== id));
+      supaDeleteColaboradora(id);
+    },
+    update: (id, patch) => setColaboradorasNomes(c => c.map(x => x.id === id ? { ...x, ...patch } : x)),
+  };
   const fornecedoresNomesOps = criarLista(setFornecedoresNomes);
   const marcacoesOps = criarLista(setMarcacoes);
   const listaEsperaOps = criarLista(setListaEspera);
@@ -574,116 +646,30 @@ function useMockDB() {
   const produtosEstoqueBaixo = produtos.filter(p => p.ativo && p.estoque_atual <= p.estoque_minimo);
 
   useEffect(() => {
-    function diasAtras(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
-    const porNome = (nome) => produtos.find(p => p.nome === nome)?.id;
-
-    const servicos = ['Manicure Gel', 'Pedicure Spa', 'Verniz Simples', 'Nail Art', 'Manicure Gel', 'Pedicure Spa', 'Manicure Gel'];
-    [13, 11, 9, 8, 6, 5, 4, 3, 2, 1, 1, 0, 0].forEach((d, i) => {
-      registarVenda({ servico: servicos[i % servicos.length], cliente: '', valor: 18 + (i % 5) * 6, forma_pagamento: i % 3 === 0 ? 'Multibanco' : 'Numerário', atendidoPor: 'u2', data: diasAtras(d) });
-    });
-
-    registarCompra({ produtoId: porNome('Verniz Gel Vermelho'), quantidade: 4, precoUnitario: 8.5, compradoPor: 'u3', data: diasAtras(12) });
-    registarCompra({ produtoId: porNome('Algodão Descartável'), quantidade: 3, precoUnitario: 4.2, compradoPor: 'u3', data: diasAtras(9) });
-    registarCompra({ produtoId: porNome('Top Coat'), quantidade: 2, precoUnitario: 9, compradoPor: 'u3', data: diasAtras(5) });
-    registarCompra({ produtoId: porNome('Lima de Unhas 180/240'), quantidade: 10, precoUnitario: 0.6, compradoPor: 'u3', data: diasAtras(2) });
-
-    criarTarefa({ titulo: 'Confirmar entrega de material', responsavel_nome: GESTORA_NOME, data_inicio: diasAtras(2), data_entrega: diasAtras(-1), urgencia: 'alta', categoria: 'operacoes' });
-    criarTarefa({ titulo: 'Rever plano de marketing do mês', responsavel_nome: GESTORA_NOME, data_inicio: diasAtras(0), data_entrega: diasAtras(-3), urgencia: 'media', categoria: 'estrategia' });
-    criarTarefa({ titulo: 'Fechar contas da semana', responsavel_nome: GESTORA_NOME, data_inicio: diasAtras(1), data_entrega: diasAtras(-2), urgencia: 'baixa', categoria: 'financeiro' });
-
-    // ---- Dados reais importados do LIVRO_CAIXA_2026.xlsx ----
-    const anoReal = 2026;
-    const faturacaoReal = {
-      '01': { RAFA: 5661.07, JOYCE: 11464.35, MAYARA: 7217.10, VICTORIA: 9091.91, 'LUCÉLIA': 7627.08, ISABELLA: 8384.79, ANGELA: 1903.13, 'RAFAELA ALVES': 2118.38, ANA: 1464.00, 'KARLA SILVA': 3846.15 },
-      '02': { RAFA: 4788.00, JOYCE: 8840.77, MAYARA: 8169.30, VICTORIA: 8033.98, 'LUCÉLIA': 7179.67, ISABELLA: 6960.11, ANGELA: 1530.00, 'RAFAELA ALVES': 2639.25, ANA: 2648.25, 'KARLA SILVA': 8328.77 },
-      '03': { JOYCE: 6286.09, MAYARA: 7844.86, VICTORIA: 8810.37, 'LUCÉLIA': 8012.33, ISABELLA: 9176.67, 'RAFAELA ALVES': 1177.50, 'KARLA SILVA': 7981.74 },
-      '04': { JOYCE: 11733.46, MAYARA: 11126.11, VICTORIA: 7966.30, 'LUCÉLIA': 9581.93, ANA: 10452.80, ANGELA: 4081.68, 'KARLA SILVA': 4991.47 },
-      '05': { JOYCE: 2912.50, MAYARA: 2940.40, VICTORIA: 2812.90, 'LUCÉLIA': 391.40, ISABELLA: 2408.60, 'FABRÍCIA': 136.40, 'NINA RODRIGUES': 444.50, MILA: 144.50 },
-      '06': { JOYCE: 2837.00, MAYARA: 2341.50, VICTORIA: 2303.90, ISABELLA: 2178.30, 'NINA RODRIGUES': 2474.50, CLARA: 2493.40, ELINE: 124.00 },
-      '07': { JOYCE: 188.90, MAYARA: 224.00, ISABELLA: 184.50, 'NINA RODRIGUES': 418.00, CLARA: 210.90 },
-    };
-    Object.entries(faturacaoReal).forEach(([mesNum, profissionais]) => {
-      const mes = `${anoReal}-${mesNum}`;
-      Object.entries(profissionais).forEach(([nome, bruto]) => {
-        const id = uid();
-        const brutoAte = Math.min(bruto, 2460);
-        const brutoAcima = Math.max(0, bruto - 2460);
-        const valorComissao = (brutoAte / 1.23) * 0.5 + (brutoAcima / 1.23) * 0.6;
-        setComissoes(c => [{ id, profissional: nome, mes, faturacao_bruto: bruto, status: 'pago', criado_por: null, criado_em: new Date().toISOString() }, ...c]);
-        setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: 'Comissão', valor: valorComissao, descricao: `Comissão ${nome} — ${mes}`, origem: 'comissao', canal_pagamento: null, criado_por: null, data: primeiroDiaProximoMes(mes) }, ...f]);
-      });
-    });
-
-    const despesasReaisJunho = [
-      { dia: '01', fornecedor: 'Arrenda', categoria: 'Operacional', valor: 1600.00, status: 'pago', canal: 'Conta principal' },
-      { dia: '02', fornecedor: 'Marketing', categoria: 'Marketing', valor: 200.00, status: 'pago', canal: 'Online' },
-      { dia: '03', fornecedor: 'Manutenção', categoria: 'Manutenção', valor: 100.00, status: 'pago', canal: 'Online' },
-      { dia: '05', fornecedor: 'Ordenados', categoria: 'Ordenados', valor: 4500.00, status: 'pago', canal: 'Conta principal' },
-      { dia: '06', fornecedor: 'Alarme', categoria: 'Operacional', valor: 45.00, status: 'pendente', canal: null },
-      { dia: '07', fornecedor: 'Limpeza', categoria: 'Limpeza', valor: 250.00, status: 'pago', canal: 'Dinheiro' },
-      { dia: '08', fornecedor: 'Contabilista', categoria: 'Extras', valor: 264.00, status: 'pago', canal: 'Conta principal' },
-      { dia: '09', fornecedor: 'Epal', categoria: 'Operacional', valor: 130.00, status: 'pago', canal: 'Conta principal' },
-      { dia: '10', fornecedor: 'Seguro', categoria: 'Operacional', valor: 32.22, status: 'pendente', canal: null },
-      { dia: '11', fornecedor: 'Moloni', categoria: 'Operacional', valor: 32.00, status: 'pendente', canal: null },
-      { dia: '12', fornecedor: 'Meo Energia', categoria: 'Operacional', valor: 150.00, status: 'pendente', canal: null },
-      { dia: '13', fornecedor: 'Buk', categoria: 'Operacional', valor: 130.00, status: 'pendente', canal: null },
-      { dia: '14', fornecedor: 'Meo Internet', categoria: 'Operacional', valor: 150.00, status: 'pendente', canal: null },
-      { dia: '15', fornecedor: 'Seguro', categoria: 'Operacional', valor: 86.00, status: 'pendente', canal: null },
-      { dia: '16', fornecedor: 'Cheiros', categoria: 'Limpeza', valor: 50.00, status: 'pendente', canal: null },
-      { dia: '20', fornecedor: 'Segurança Social', categoria: 'Segurança Social', valor: 490.69, status: 'pendente', canal: null },
-      { dia: '21', fornecedor: 'IVA', categoria: 'Impostos', valor: 1700.00, status: 'pendente', canal: null },
-    ];
-    despesasReaisJunho.forEach(d => {
-      const dataCompleta = `2026-06-${d.dia}`;
-      const id = uid();
-      setContasPagar(c => [{ id, fornecedor: d.fornecedor, categoria: d.categoria, valor: d.valor, data_vencimento: dataCompleta, status: d.status, canal_pagamento: d.canal, criado_por: null, criado_em: new Date().toISOString() }, ...c]);
-      if (d.status === 'pago') {
-        setFinanceiro(f => [{ id: uid(), tipo: 'saida', categoria: d.categoria, valor: d.valor, descricao: `${d.fornecedor} — conta paga`, origem: 'conta_pagar', canal_pagamento: d.canal, criado_por: null, data: dataCompleta }, ...f]);
-      }
-    });
-
-    const recorrentesReais = [
-      { fornecedor: 'Arrenda', categoria: 'Operacional', valor: 1600, dia_mes: 1, ativo: true },
-      { fornecedor: 'Alarme', categoria: 'Operacional', valor: 45, dia_mes: 6, ativo: true },
-      { fornecedor: 'Contabilista', categoria: 'Extras', valor: 264, dia_mes: 8, ativo: true },
-      { fornecedor: 'Seguro', categoria: 'Operacional', valor: 32.22, dia_mes: 10, ativo: true },
-      { fornecedor: 'Moloni', categoria: 'Operacional', valor: 32, dia_mes: 11, ativo: true },
-      { fornecedor: 'Buk', categoria: 'Operacional', valor: 130, dia_mes: 13, ativo: true },
-      { fornecedor: 'Meo Internet', categoria: 'Operacional', valor: 150, dia_mes: 14, ativo: true },
-    ];
-    recorrentesReais.forEach(r => setDespesasRecorrentes(d => [{ id: uid(), ...r }, ...d]));
-
-    ['Rafa', 'Joyce', 'Mayara', 'Victoria', 'Lucélia', 'Isabella', 'Angela', 'Rafaela', 'Ana', 'Karla Silva', 'Fabrícia', 'Nina Rodrigues', 'Mila', 'Clara', 'Eline'].forEach(nome => {
-      setColaboradorasNomes(c => [...c, { id: uid(), nome }]);
-    });
-
-    funisOps.add({ nome: 'Instagram → Marcação', etapas: 'Story, DM, Marcação, 1ª visita, Fidelização', canal_origem: 'Instagram', novos_clientes: 12, status: 'ativo' });
-    funisOps.add({ nome: 'Indicação de clientes', etapas: 'Indicação, Contacto, Marcação, 1ª visita', canal_origem: 'Indicação', novos_clientes: 6, status: 'ativo' });
-    funisOps.add({ nome: 'Passa por fora', etapas: 'Vê montra, Entra, Pergunta preços, Marca', canal_origem: 'Passa por fora', novos_clientes: 3, status: 'pausado' });
-
-    const anoSeed = new Date().getFullYear();
-    eventosOps.add({ nome: 'Dia dos Namorados', data: `${anoSeed}-02-14`, campanha: 'Pack casal — manicure a dois', status: 'planeado' });
-    eventosOps.add({ nome: 'Dia Internacional da Mulher', data: `${anoSeed}-03-08`, campanha: '', status: 'sem_campanha' });
-    eventosOps.add({ nome: 'Páscoa', data: `${anoSeed}-04-20`, campanha: 'Nail art temática + brinde', status: 'planeado' });
-    eventosOps.add({ nome: 'Dia da Mãe', data: `${anoSeed}-05-04`, campanha: 'Voucher presente mãe e filha', status: 'planeado' });
-    eventosOps.add({ nome: 'Verão / Férias', data: `${anoSeed}-06-21`, campanha: '', status: 'sem_campanha' });
-    eventosOps.add({ nome: 'Regresso às aulas', data: `${anoSeed}-09-15`, campanha: '', status: 'sem_campanha' });
-    eventosOps.add({ nome: 'Black Friday', data: `${anoSeed}-11-28`, campanha: 'Desconto packs de Natal', status: 'planeado' });
-    eventosOps.add({ nome: 'Natal', data: `${anoSeed}-12-24`, campanha: 'Nail art festiva + kit prenda', status: 'planeado' });
-    eventosOps.add({ nome: 'Passagem de Ano', data: `${anoSeed}-12-31`, campanha: '', status: 'sem_campanha' });
-
-    marcacoesOps.add({ cliente: 'Ana Costa', servico: 'Manicure Gel', colaboradora_id: 'u2', data: hoje(), hora: '10:00', duracao_min: 60, status: 'confirmada', notas: '' });
-    marcacoesOps.add({ cliente: 'Beatriz Lopes', servico: 'Pedicure Spa', colaboradora_id: 'u2', data: hoje(), hora: '11:30', duracao_min: 75, status: 'confirmada', notas: '' });
-    marcacoesOps.add({ cliente: 'Carla Nunes', servico: 'Nail Art', colaboradora_id: 'u1', data: hoje(), hora: '14:00', duracao_min: 90, status: 'confirmada', notas: '' });
-    // eslint-disable-next-line
+    async function carregar() {
+      const [{ data: prods, error: e1 }, { data: lista, error: e2 }, { data: colabs, error: e3 }] = await Promise.all([
+        supabase.from('produtos').select('*').order('nome'),
+        supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
+        supabase.from('colaboradoras_nomes').select('*').order('nome'),
+      ]);
+      if (e1) console.error('Supabase (produtos load):', e1.message);
+      if (e2) console.error('Supabase (lista_compras load):', e2.message);
+      if (e3) console.error('Supabase (colaboradoras_nomes load):', e3.message);
+      if (prods) setProdutos(prods);
+      if (lista) setListaCompras(lista);
+      if (colabs) setColaboradorasNomes(colabs);
+      setCarregadoDoSupabase(true);
+    }
+    carregar();
   }, []);
+
 
   return {
     produtos, listaCompras, compras, financeiro, vendas, conteudos, tarefas, fechosCaixa, pendentesPagamento, contasPagar, saidasEstoque, limiteGastosMensal, metaMensalVendas,
     setLimiteGastosMensal, setMetaMensalVendas,
     canaisAquisicao, anuncios, parcerias, influencers, marketingOffline, indicacoes, estrategiasVendas, funisVendas, marcacoes, listaEspera, eventosCalendario, comissoes, despesasRecorrentes, investimentosExternos, colaboradorasNomes,
     canaisOps, anunciosOps, parceriasOps, influencersOps, offlineOps, indicacoesOps, estrategiasOps, funisOps, marcacoesOps, listaEsperaOps, eventosOps, despesasRecorrentesOps, gerarContasRecorrentesDoMes, investimentosOps, colaboradorasNomesOps, fornecedoresNomes, fornecedoresNomesOps,
-    nomeColaborador, nomeProduto, unidadeProduto, produtosEstoqueBaixo,
+    nomeColaborador, nomeProduto, unidadeProduto, produtosEstoqueBaixo, carregadoDoSupabase,
     pedirReposicao, cancelarPedido, removerItemLista, registarCompra, confirmarChegadaCompra, lancarMovimentoManual, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
     entregasEstoque, entregarDoEstoque, confirmarRecebimentoEstoque, resolverPedidoNaSaida,
     alicatesAfiar, pedirAfiacao, marcarEntregueAmolador, marcarDevolvidoAmolador, confirmarRecebimentoAfiacao, quantidadeAfiadaUltimos3Meses,
@@ -4076,6 +4062,14 @@ function AppInner() {
 
 function App() {
   const db = useMockDB();
+  if (!db.carregadoDoSupabase) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, background: 'var(--cor-fundo)' }}>
+        <div className="eyebrow">Atelier Rafa Mendonça</div>
+        <p style={{ color: 'var(--cor-tinta-suave)', fontSize: 14 }}>A ligar ao Supabase…</p>
+      </div>
+    );
+  }
   return (
     <DBContext.Provider value={db}>
       <AuthProvider><AppInner /></AuthProvider>

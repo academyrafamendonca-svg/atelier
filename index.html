@@ -192,7 +192,7 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">Estoque, Lista de Compras e Colaboradoras já gravam a sério no Supabase. O resto (Financeiro, Marketing, Vendas, Gestão) ainda vive só nesta sessão do browser.</div>
+
 <div id="root"></div>
 
 <script type="text/babel">
@@ -585,11 +585,9 @@ function useMockDB() {
   }
 
   function calcularComissao(bruto) {
-    const brutoAte = Math.min(bruto, 2460);
-    const brutoAcima = Math.max(0, bruto - 2460);
-    const semIvaAte = brutoAte / 1.23;
-    const semIvaAcima = brutoAcima / 1.23;
-    return semIvaAte * 0.5 + semIvaAcima * 0.6;
+    const semIva = bruto / 1.23;
+    const percentagem = bruto > 2460 ? 0.6 : 0.5;
+    return semIva * percentagem;
   }
 
   function adicionarComissao({ profissional, mes, faturacaoBruto, criadoPor }) {
@@ -3296,13 +3294,13 @@ function PendenteRow({ p, db }) {
 function ComissaoRow({ c, db }) {
   const [canal, setCanal] = useState(CANAIS_PAGAMENTO_SAIDA[0]);
   const valorComissao = db.calcularComissao(c.faturacao_bruto);
-  const brutoAcima = Math.max(0, c.faturacao_bruto - 2460);
+  const percentagem = c.faturacao_bruto > 2460 ? 60 : 50;
   return (
     <tr>
       <td>{c.profissional}</td>
       <td>{c.mes}</td>
       <td>{Number(c.faturacao_bruto).toFixed(2)} €</td>
-      <td style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)' }}>{brutoAcima > 0 ? `2460 @ 50% + ${brutoAcima.toFixed(2)} @ 60%` : 'até 2460 @ 50%'}</td>
+      <td style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)' }}>{percentagem}%</td>
       <td style={{ fontWeight: 700 }}>{valorComissao.toFixed(2)} €</td>
       <td>
         <select value={canal} onChange={e => setCanal(e.target.value)} className="select-compacto">
@@ -3335,7 +3333,7 @@ function Comissoes() {
 
   return (
     <div>
-      <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)', marginBottom: 16 }}>Comissão por profissional: até 2.460 € de faturação bruta no mês é 50%, o que passar disso é 60% — calculado sobre o valor sem IVA. As contas fecham no último dia do mês e o pagamento é feito no dia 1 do mês seguinte.</p>
+      <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)', marginBottom: 16 }}>Comissão por profissional: até 2.460 € de faturação bruta no mês é 50% sobre tudo, acima disso é 60% sobre tudo — calculado sobre o valor sem IVA. As contas fecham no último dia do mês e o pagamento é feito no dia 1 do mês seguinte.</p>
       <FiltroMes mes={mesFiltro} setMes={setMesFiltro} verTodos={verTodos} setVerTodos={setVerTodos} />
 
       <div className="card" style={{ marginBottom: 20 }}>
@@ -3356,7 +3354,7 @@ function Comissoes() {
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginBottom: 14 }}>Por pagar</h3>
         <table>
-          <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>Escalão</th><th>Comissão</th><th>Canal</th><th></th></tr></thead>
+          <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>%</th><th>Comissão</th><th>Canal</th><th></th></tr></thead>
           <tbody>
             {pendentes.map(c => <ComissaoRow key={c.id} c={c} db={db} />)}
           </tbody>

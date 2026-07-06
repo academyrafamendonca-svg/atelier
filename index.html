@@ -415,7 +415,15 @@ const COLABORADORES_DEMO = [
 
 const GESTORA_NOME = COLABORADORES_DEMO.find(c => c.is_admin)?.nome || COLABORADORES_DEMO[0].nome;
 
-function uid() { return Math.random().toString(36).slice(2, 10); }
+function uid() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  // fallback para browsers muito antigos
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 function hoje() { return new Date().toISOString().slice(0, 10); }
 
 /* ============================ DADOS (mock em memória) ============================ */

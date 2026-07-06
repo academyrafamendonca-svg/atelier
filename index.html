@@ -192,7 +192,7 @@ label { font-size: 12px; font-weight: 600; color: var(--cor-tinta-suave); displa
 </style>
 </head>
 <body>
-<div class="faixa-demo">Todo o sistema já grava a sério no Supabase — funciona em qualquer telemóvel ou computador, sincronizado.</div>
+<div class="faixa-demo">Sistema completo ligado ao Supabase — tudo fica guardado a sério, sincronizado em qualquer dispositivo.</div>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -316,6 +316,60 @@ async function supaUpdateComissao(id, patch) {
   if (error) console.error('Supabase (comissoes update):', error.message);
 }
 
+async function supaInsertCompra(c) {
+  const { error } = await supabase.from('compras').insert({
+    id: c.id, produto_id: c.produto_id, lista_compra_id: c.lista_compra_id, fornecedor: c.fornecedor,
+    quantidade: c.quantidade, preco_unitario: c.preco_unitario, preco_total: c.preco_total,
+    comprado_por: c.comprado_por || null, canal_pagamento: c.canal_pagamento, pago: c.pago,
+    data_compra: c.data_compra, data_prevista_entrega: c.data_prevista_entrega, recebido: c.recebido,
+  });
+  if (error) console.error('Supabase (compras insert):', error.message);
+}
+async function supaUpdateCompra(id, patch) {
+  const { error } = await supabase.from('compras').update(patch).eq('id', id);
+  if (error) console.error('Supabase (compras update):', error.message);
+}
+async function supaInsertSaidaEstoque(s) {
+  const { error } = await supabase.from('saidas_estoque').insert({
+    id: s.id, produto_id: s.produto_id, quantidade: s.quantidade, retirado_por_nome: s.retirado_por_nome,
+    para_equipa: s.para_equipa, data: s.data,
+  });
+  if (error) console.error('Supabase (saidas_estoque insert):', error.message);
+}
+async function supaInsertEntregaEstoque(e) {
+  const { error } = await supabase.from('entregas_estoque').insert({
+    id: e.id, produto_id: e.produto_id, lista_compra_id: e.lista_compra_id, quantidade: e.quantidade,
+    entregue_por: e.entregue_por || null, data_entrega: e.data_entrega, recebido: e.recebido,
+  });
+  if (error) console.error('Supabase (entregas_estoque insert):', error.message);
+}
+async function supaUpdateEntregaEstoque(id, patch) {
+  const { error } = await supabase.from('entregas_estoque').update(patch).eq('id', id);
+  if (error) console.error('Supabase (entregas_estoque update):', error.message);
+}
+async function supaInsertAlicate(a) {
+  const { error } = await supabase.from('alicates_afiar').insert({
+    id: a.id, colaboradora: a.colaboradora, quantidade: a.quantidade, status: a.status,
+    pago: a.pago || false, custo: a.custo || null, canal_pagamento: a.canal_pagamento || null,
+    data_pedido: a.data_pedido,
+  });
+  if (error) console.error('Supabase (alicates_afiar insert):', error.message);
+}
+async function supaUpdateAlicate(id, patch) {
+  const { error } = await supabase.from('alicates_afiar').update(patch).eq('id', id);
+  if (error) console.error('Supabase (alicates_afiar update):', error.message);
+}
+async function supaInsertConteudo(c) {
+  const { error } = await supabase.from('conteudos_marketing').insert({
+    id: c.id, tipo: c.tipo, titulo: c.titulo, data: c.data_publicacao || null, status: c.status,
+  });
+  if (error) console.error('Supabase (conteudos_marketing insert):', error.message);
+}
+async function supaUpdateConteudoStatus(id, status) {
+  const { error } = await supabase.from('conteudos_marketing').update({ status }).eq('id', id);
+  if (error) console.error('Supabase (conteudos_marketing update):', error.message);
+}
+
 const AREAS = [
   { key: 'Agenda', label: 'Agenda' },
   { key: 'Gestao', label: 'Gestão' },
@@ -436,7 +490,9 @@ function useMockDB() {
 
   function registarSaidaEstoque({ produtoId, quantidade, retiradoPorNome, paraEquipa, data }) {
     const dataSaida = data || hoje();
-    setSaidasEstoque(s => [{ id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: paraEquipa ? null : retiradoPorNome, para_equipa: !!paraEquipa, data: dataSaida, criado_em: new Date().toISOString() }, ...s]);
+    const saida = { id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: paraEquipa ? null : retiradoPorNome, para_equipa: !!paraEquipa, data: dataSaida, criado_em: new Date().toISOString() };
+    setSaidasEstoque(s => [saida, ...s]);
+    supaInsertSaidaEstoque(saida);
     const produtoAtual = produtos.find(p => p.id === produtoId);
     const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
     setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
@@ -444,7 +500,9 @@ function useMockDB() {
   }
 
   function entregarDoEstoque({ listaCompraId, produtoId, quantidade, entreguePor }) {
-    setEntregasEstoque(e => [{ id: uid(), produto_id: produtoId, lista_compra_id: listaCompraId, quantidade, entregue_por: entreguePor, data_entrega: hoje(), recebido: false, confirmado_por: null, confirmado_em: null }, ...e]);
+    const entrega = { id: uid(), produto_id: produtoId, lista_compra_id: listaCompraId, quantidade, entregue_por: entreguePor, data_entrega: hoje(), recebido: false, confirmado_por: null, confirmado_em: null };
+    setEntregasEstoque(e => [entrega, ...e]);
+    supaInsertEntregaEstoque(entrega);
     const produtoAtual = produtos.find(p => p.id === produtoId);
     const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
     setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
@@ -454,7 +512,9 @@ function useMockDB() {
   }
 
   function resolverPedidoNaSaida({ listaCompraId, produtoId, quantidade, retiradoPorNome }) {
-    setSaidasEstoque(s => [{ id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: retiradoPorNome, para_equipa: false, data: hoje(), criado_em: new Date().toISOString() }, ...s]);
+    const saida = { id: uid(), produto_id: produtoId, quantidade, retirado_por_nome: retiradoPorNome, para_equipa: false, data: hoje(), criado_em: new Date().toISOString() };
+    setSaidasEstoque(s => [saida, ...s]);
+    supaInsertSaidaEstoque(saida);
     const produtoAtual = produtos.find(p => p.id === produtoId);
     const novoValor = Math.max(0, (produtoAtual?.estoque_atual || 0) - Number(quantidade));
     setProdutos(ps => ps.map(p => p.id === produtoId ? { ...p, estoque_atual: novoValor } : p));
@@ -465,16 +525,20 @@ function useMockDB() {
 
   function confirmarRecebimentoEstoque(entregaId, confirmadoPor) {
     setEntregasEstoque(e => e.map(item => item.id === entregaId ? { ...item, recebido: true, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() } : item));
+    supaUpdateEntregaEstoque(entregaId, { recebido: true, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() });
   }
 
   function pedirAfiacao({ colaboradora, quantidade }) {
-    setAlicatesAfiar(a => [{ id: uid(), colaboradora, quantidade, status: 'pedido', data_pedido: hoje(), data_entregue_amolador: null, data_devolvido: null, data_confirmado: null }, ...a]);
+    const item = { id: uid(), colaboradora, quantidade, status: 'pedido', data_pedido: hoje(), data_entregue_amolador: null, data_devolvido: null, data_confirmado: null };
+    setAlicatesAfiar(a => [item, ...a]);
+    supaInsertAlicate(item);
   }
 
   function marcarEntregueAmolador(id, jaPago, custo, canalPagamento, confirmadoPor) {
     const item = alicatesAfiar.find(a => a.id === id);
     const custoFinal = Number(custo) || 0;
     setAlicatesAfiar(a => a.map(x => x.id === id ? { ...x, status: 'entregue_amolador', data_entregue_amolador: hoje(), pago: !!jaPago, custo: jaPago ? custoFinal : x.custo, canal_pagamento: jaPago ? canalPagamento : x.canal_pagamento } : x));
+    supaUpdateAlicate(id, { status: 'entregue_amolador', data_entregue_amolador: hoje(), pago: !!jaPago, custo: jaPago ? custoFinal : (item?.custo ?? null), canal_pagamento: jaPago ? canalPagamento : (item?.canal_pagamento ?? null) });
     if (jaPago && custoFinal > 0) {
       const mov = { id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: hoje() };
       setFinanceiro(f => [mov, ...f]);
@@ -484,6 +548,7 @@ function useMockDB() {
 
   function marcarDevolvidoAmolador(id) {
     setAlicatesAfiar(a => a.map(item => item.id === id ? { ...item, status: 'devolvido', data_devolvido: hoje() } : item));
+    supaUpdateAlicate(id, { status: 'devolvido', data_devolvido: hoje() });
   }
 
   function confirmarRecebimentoAfiacao(id, data, custo, confirmadoPor, canalPagamento) {
@@ -491,6 +556,7 @@ function useMockDB() {
     const dataFinal = data || hoje();
     const custoFinal = item?.pago ? Number(item.custo) || 0 : Number(custo) || 0;
     setAlicatesAfiar(a => a.map(x => x.id === id ? { ...x, status: 'confirmado', data_confirmado: dataFinal, custo: custoFinal, canal_pagamento: x.pago ? x.canal_pagamento : canalPagamento } : x));
+    supaUpdateAlicate(id, { status: 'confirmado', data_confirmado: dataFinal, custo: custoFinal, canal_pagamento: item?.pago ? item?.canal_pagamento : canalPagamento });
     if (!item?.pago && custoFinal > 0) {
       const mov = { id: uid(), tipo: 'saida', categoria: 'Manutenção', valor: custoFinal, descricao: `Afiar ${item?.quantidade || ''} alicate(s) — ${item?.colaboradora || ''}`, origem: 'afiacao', canal_pagamento: canalPagamento, criado_por: confirmadoPor, data: dataFinal };
       setFinanceiro(f => [mov, ...f]);
@@ -558,7 +624,9 @@ function useMockDB() {
       const pendentesDoProduto = listaCompras.filter(l => l.status === 'pendente' && l.produto_id === produtoId).sort((a, b) => a.criado_em.localeCompare(b.criado_em));
       if (pendentesDoProduto[0]) linkId = pendentesDoProduto[0].id;
     }
-    setCompras(c => [{ id: compraId, produto_id: produtoId, lista_compra_id: linkId, fornecedor: fornecedor || '', quantidade, preco_unitario: precoUnitario, preco_total: precoTotal, comprado_por: compradoPor, canal_pagamento: jaPago ? canalPagamento : null, pago: !!jaPago, data_compra: dataCompra, data_prevista_entrega: dataPrevistaEntrega || null, recebido: false, confirmado_por: null, confirmado_em: null }, ...c]);
+    const novaCompra = { id: compraId, produto_id: produtoId, lista_compra_id: linkId, fornecedor: fornecedor || '', quantidade, preco_unitario: precoUnitario, preco_total: precoTotal, comprado_por: compradoPor, canal_pagamento: jaPago ? canalPagamento : null, pago: !!jaPago, data_compra: dataCompra, data_prevista_entrega: dataPrevistaEntrega || null, recebido: false, confirmado_por: null, confirmado_em: null };
+    setCompras(c => [novaCompra, ...c]);
+    supaInsertCompra(novaCompra);
     if (linkId) { setListaCompras(l => l.map(item => item.id === linkId ? { ...item, status: 'encomendado' } : item)); supaUpdateListaCompra(linkId, { status: 'encomendado' }); }
     if (jaPago) {
       const mov = { id: uid(), tipo: 'saida', categoria: 'Materiais', valor: precoTotal, descricao: `Compra de ${quantidade} x ${nomeProduto(produtoId)} — ${fornecedor || 'fornecedor não indicado'} (a caminho)`, produto_id: produtoId, origem: 'compra_estoque', canal_pagamento: canalPagamento, criado_por: compradoPor, data: dataCompra };
@@ -580,6 +648,7 @@ function useMockDB() {
       supaInsertFinanceiro(mov);
     }
     setCompras(c => c.map(item => item.id === compraId ? { ...item, recebido: true, canal_pagamento: item.pago ? item.canal_pagamento : canalPagamento, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() } : item));
+    supaUpdateCompra(compraId, { recebido: true, canal_pagamento: compra.pago ? compra.canal_pagamento : canalPagamento, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() });
     if (compra.lista_compra_id) {
       setListaCompras(l => l.map(item => item.id === compra.lista_compra_id ? { ...item, status: 'em_estoque' } : item));
       supaUpdateListaCompra(compra.lista_compra_id, { status: 'em_estoque' });
@@ -700,8 +769,15 @@ function useMockDB() {
     supaInsertFinanceiro(mov);
   }
 
-  function criarConteudo(dados) { setConteudos(c => [{ id: uid(), status: 'planeado', ...dados, criado_em: new Date().toISOString() }, ...c]); }
-  function atualizarStatusConteudo(id, status) { setConteudos(c => c.map(item => item.id === id ? { ...item, status } : item)); }
+  function criarConteudo(dados) {
+    const novo = { id: uid(), status: 'planeado', ...dados, criado_em: new Date().toISOString() };
+    setConteudos(c => [novo, ...c]);
+    supaInsertConteudo(novo);
+  }
+  function atualizarStatusConteudo(id, status) {
+    setConteudos(c => c.map(item => item.id === id ? { ...item, status } : item));
+    supaUpdateConteudoStatus(id, status);
+  }
 
   function criarLista(setter) {
     return {
@@ -823,6 +899,8 @@ function useMockDB() {
         { data: eventos, error: e10 }, { data: invest, error: e11 }, { data: funis, error: e12 },
         { data: estrat, error: e13 }, { data: tarefasDb, error: e14 }, { data: recorrentesDb, error: e15 },
         { data: espera, error: e16 },
+        { data: comprasDb, error: e17 }, { data: saidasDb, error: e18 }, { data: entregasDb, error: e19 },
+        { data: alicatesDb, error: e20 }, { data: conteudosDb, error: e21 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -840,8 +918,13 @@ function useMockDB() {
         supabase.from('tarefas').select('*').order('criado_em', { ascending: false }),
         supabase.from('tarefas_recorrentes').select('*'),
         supabase.from('lista_espera').select('*').order('criado_em', { ascending: false }),
+        supabase.from('compras').select('*').order('data_compra', { ascending: false }),
+        supabase.from('saidas_estoque').select('*').order('data', { ascending: false }),
+        supabase.from('entregas_estoque').select('*').order('data_entrega', { ascending: false }),
+        supabase.from('alicates_afiar').select('*').order('data_pedido', { ascending: false }),
+        supabase.from('conteudos_marketing').select('*').order('data', { ascending: false }),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -857,6 +940,11 @@ function useMockDB() {
       if (estrat) setEstrategiasVendas(estrat);
       if (tarefasDb) setTarefas(tarefasDb.map(t => ({ ...t, status: t.coluna })));
       if (espera) setListaEspera(espera);
+      if (comprasDb) setCompras(comprasDb);
+      if (saidasDb) setSaidasEstoque(saidasDb);
+      if (entregasDb) setEntregasEstoque(entregasDb);
+      if (alicatesDb) setAlicatesAfiar(alicatesDb);
+      if (conteudosDb) setConteudos(conteudosDb.map(c => ({ ...c, data_publicacao: c.data })));
 
       if (recorrentesDb && recorrentesDb.length > 0) {
         setModelosSemanais(recorrentesDb);
@@ -911,11 +999,61 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 function AuthProvider({ children }) {
-  const [profile, setProfile] = useState(COLABORADORES_DEMO[0]);
+  const [profile, setProfile] = useState(null);
   return (
-    <AuthContext.Provider value={{ profile, entrarComo: setProfile }}>
+    <AuthContext.Provider value={{ profile, entrarComo: setProfile, sair: () => setProfile(null) }}>
       {children}
     </AuthContext.Provider>
+  );
+}
+
+function LoginScreen() {
+  const { entrarComo } = useAuth();
+  const [alvoId, setAlvoId] = useState(COLABORADORES_DEMO[0].id);
+  const [pin, setPin] = useState('');
+  const [erro, setErro] = useState('');
+
+  function entrar(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const alvo = COLABORADORES_DEMO.find(c => c.id === alvoId);
+    if (alvo && pin === alvo.pin) {
+      setErro('');
+      entrarComo(alvo);
+    } else {
+      setErro('PIN incorreto.');
+    }
+  }
+
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <p className="eyebrow" style={{ textAlign: 'center', marginBottom: 6 }}>Atelier Rafa Mendonça</p>
+        <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 24 }}>Sistema Interno</h1>
+        <form onSubmit={entrar}>
+          <div className="form-row">
+            <label>Quem és</label>
+            <select value={alvoId} onChange={e => { setAlvoId(e.target.value); setErro(''); }}>
+              {COLABORADORES_DEMO.map(c => <option key={c.id} value={c.id}>{c.nome} — {c.funcao}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>PIN</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="••••"
+              value={pin}
+              autoFocus
+              onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setErro(''); }}
+              style={{ textAlign: 'center', fontSize: 20, letterSpacing: 6 }}
+            />
+          </div>
+          {erro && <p style={{ color: 'var(--cor-alerta)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
+          <button className="btn" type="button" onClick={entrar} style={{ width: '100%', justifyContent: 'center' }}>Entrar</button>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -961,7 +1099,7 @@ function TrocarPerfil({ entrarComo }) {
 }
 
 function Layout({ area, setArea, children }) {
-  const { profile, entrarComo } = useAuth();
+  const { profile, entrarComo, sair } = useAuth();
   const permitidas = profile?.is_admin ? AREAS.map(a => a.key) : (profile?.areas || []);
 
   return (
@@ -982,6 +1120,9 @@ function Layout({ area, setArea, children }) {
           </button>
         ))}
         <div className="sidebar-footer">
+          <p style={{ fontWeight: 600, marginBottom: 2 }}>{profile?.nome}</p>
+          <p style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)', marginBottom: 10 }}>{profile?.funcao}</p>
+          <button onClick={() => { if (window.confirm('Sair da sessão atual?')) sair(); }} style={{ marginBottom: 10 }}>Sair</button>
           <TrocarPerfil entrarComo={entrarComo} />
         </div>
       </aside>
@@ -4295,9 +4436,15 @@ function App() {
   }
   return (
     <DBContext.Provider value={db}>
-      <AuthProvider><AppInner /></AuthProvider>
+      <AuthProvider><AuthGate /></AuthProvider>
     </DBContext.Provider>
   );
+}
+
+function AuthGate() {
+  const { profile } = useAuth();
+  if (!profile) return <LoginScreen />;
+  return <AppInner />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

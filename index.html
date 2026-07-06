@@ -409,8 +409,8 @@ function dataPrevistaPorUrgencia(urgencia) {
 
 const COLABORADORES_DEMO = [
   { id: 'u1', nome: 'Rafa Mendonça', funcao: 'Gestora / Admin', labelCurto: 'Gestão', areas: AREAS.map(a => a.key), is_admin: true, pin: '1111' },
-  { id: 'u2', nome: 'Receção', funcao: 'Fecho de caixa', labelCurto: 'Fecho', areas: ['Financeiro'], is_admin: false, apenasFechoCaixa: true, pin: '2222' },
-  { id: 'u3', nome: 'Compras', funcao: 'Lista de compras', labelCurto: 'Compras', areas: ['ListaCompras'], is_admin: false, pin: '3333' },
+  { id: 'u2', nome: 'Receção', funcao: 'Fecho de caixa', labelCurto: 'Fecho de Caixa', areas: ['Financeiro'], is_admin: false, apenasFechoCaixa: true, pin: '2222' },
+  { id: 'u3', nome: 'Compras', funcao: 'Lista de compras', labelCurto: 'Lista de Compras', areas: ['ListaCompras'], is_admin: false, pin: '3333' },
 ];
 
 const GESTORA_NOME = COLABORADORES_DEMO.find(c => c.is_admin)?.nome || COLABORADORES_DEMO[0].nome;
@@ -1045,7 +1045,7 @@ function LoginScreen() {
   return (
     <div className="login-shell">
       <div className="login-card" style={{ textAlign: 'center' }}>
-        <img src={`data:image/png;base64,${LOGO_B64}`} alt="Atelier Rafa Mendonça" style={{ width: 130, margin: '0 auto 28px', display: 'block' }} />
+        <img src={`data:image/png;base64,${LOGO_B64}`} alt="Atelier Rafa Mendonça" style={{ width: 150, margin: '0 auto 28px', display: 'block', borderRadius: 18, boxShadow: '0 8px 24px rgba(13, 47, 38, 0.12)' }} />
 
         {!alvoId ? (
           <div>
@@ -1176,7 +1176,7 @@ function Layout({ area, setArea, children }) {
           <p style={{ fontWeight: 600, marginBottom: 2 }}>{profile?.nome}</p>
           <p style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)', marginBottom: 10 }}>{profile?.funcao}</p>
           <button onClick={() => { if (window.confirm('Sair da sessão atual?')) sair(); }} style={{ marginBottom: 10 }}>Sair</button>
-          <TrocarPerfil entrarComo={entrarComo} />
+          {profile?.is_admin && <TrocarPerfil entrarComo={entrarComo} />}
         </div>
       </aside>
       <main className="main-area">{children}</main>

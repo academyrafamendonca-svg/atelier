@@ -444,8 +444,16 @@ function useMockDB() {
   const [colaboradorasNomes, setColaboradorasNomes] = useState([]);
   const [fornecedoresNomes, setFornecedoresNomes] = useState([]);
   const [alicatesAfiar, setAlicatesAfiar] = useState([]);
-  const [limiteGastosMensal, setLimiteGastosMensal] = useState(1500);
-  const [metaMensalVendas, setMetaMensalVendas] = useState(4000);
+  const [limiteGastosMensal, setLimiteGastosMensalLocal] = useState(1500);
+  const [metaMensalVendas, setMetaMensalVendasLocal] = useState(4000);
+  function setLimiteGastosMensal(valor) {
+    setLimiteGastosMensalLocal(valor);
+    supabase.from('configuracoes').upsert({ chave: 'limite_gastos_mensal', valor }).then(({ error }) => { if (error) console.error('Supabase (configuracoes upsert):', error.message); });
+  }
+  function setMetaMensalVendas(valor) {
+    setMetaMensalVendasLocal(valor);
+    supabase.from('configuracoes').upsert({ chave: 'meta_mensal_vendas', valor }).then(({ error }) => { if (error) console.error('Supabase (configuracoes upsert):', error.message); });
+  }
   const [marcacoes, setMarcacoes] = useState([]);
   const [listaEspera, setListaEspera] = useState([]);
   const [financeiro, setFinanceiro] = useState([]);
@@ -648,6 +656,13 @@ function useMockDB() {
       setFinanceiro(f => [mov, ...f]);
       supaInsertFinanceiro(mov);
     }
+  }
+
+  function atualizarCompra(id, patch) {
+    setCompras(c => c.map(item => item.id === id ? { ...item, ...patch, preco_total: (patch.quantidade ?? item.quantidade) * (patch.preco_unitario ?? item.preco_unitario) } : item));
+    const item = compras.find(c => c.id === id);
+    const precoTotal = (patch.quantidade ?? item?.quantidade) * (patch.preco_unitario ?? item?.preco_unitario);
+    supaUpdateCompra(id, { ...patch, preco_total: precoTotal });
   }
 
   function confirmarChegadaCompra(compraId, confirmadoPor, canalPagamento) {
@@ -916,6 +931,7 @@ function useMockDB() {
         { data: espera, error: e16 },
         { data: comprasDb, error: e17 }, { data: saidasDb, error: e18 }, { data: entregasDb, error: e19 },
         { data: alicatesDb, error: e20 }, { data: conteudosDb, error: e21 },
+        { data: config, error: e22 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -938,8 +954,9 @@ function useMockDB() {
         supabase.from('entregas_estoque').select('*').order('data_entrega', { ascending: false }),
         supabase.from('alicates_afiar').select('*').order('data_pedido', { ascending: false }),
         supabase.from('conteudos_marketing').select('*').order('data', { ascending: false }),
+        supabase.from('configuracoes').select('*'),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -960,6 +977,12 @@ function useMockDB() {
       if (entregasDb) setEntregasEstoque(entregasDb);
       if (alicatesDb) setAlicatesAfiar(alicatesDb);
       if (conteudosDb) setConteudos(conteudosDb.map(c => ({ ...c, data_publicacao: c.data })));
+      if (config) {
+        const limite = config.find(c => c.chave === 'limite_gastos_mensal');
+        const meta = config.find(c => c.chave === 'meta_mensal_vendas');
+        if (limite) setLimiteGastosMensalLocal(Number(limite.valor));
+        if (meta) setMetaMensalVendasLocal(Number(meta.valor));
+      }
 
       if (recorrentesDb && recorrentesDb.length > 0) {
         setModelosSemanais(recorrentesDb);
@@ -996,7 +1019,7 @@ function useMockDB() {
     canaisAquisicao, anuncios, parcerias, influencers, marketingOffline, indicacoes, estrategiasVendas, funisVendas, marcacoes, listaEspera, eventosCalendario, comissoes, despesasRecorrentes, investimentosExternos, colaboradorasNomes,
     canaisOps, anunciosOps, parceriasOps, influencersOps, offlineOps, indicacoesOps, estrategiasOps, funisOps, marcacoesOps, listaEsperaOps, eventosOps, despesasRecorrentesOps, gerarContasRecorrentesDoMes, investimentosOps, colaboradorasNomesOps, fornecedoresNomes, fornecedoresNomesOps,
     nomeColaborador, nomeProduto, unidadeProduto, produtosEstoqueBaixo, carregadoDoSupabase,
-    pedirReposicao, cancelarPedido, removerItemLista, registarCompra, confirmarChegadaCompra, lancarMovimentoManual, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
+    pedirReposicao, cancelarPedido, removerItemLista, registarCompra, atualizarCompra, confirmarChegadaCompra, lancarMovimentoManual, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
     entregasEstoque, entregarDoEstoque, confirmarRecebimentoEstoque, resolverPedidoNaSaida,
     alicatesAfiar, pedirAfiacao, marcarEntregueAmolador, marcarDevolvidoAmolador, confirmarRecebimentoAfiacao, quantidadeAfiadaUltimos3Meses,
     adicionarComissao, marcarComissaoPaga, desfazerComissaoPaga, calcularComissao,
@@ -2247,6 +2270,41 @@ function SaidaEstoqueTab() {
 
 function ConfirmarChegadaRow({ c, db, onConfirmar }) {
   const [canal, setCanal] = useState(CANAIS_PAGAMENTO_SAIDA[0]);
+  const [aEditar, setAEditar] = useState(false);
+  const [fornecedor, setFornecedor] = useState(c.fornecedor || '');
+  const [quantidade, setQuantidade] = useState(String(c.quantidade));
+  const [precoUnitario, setPrecoUnitario] = useState(String(c.preco_unitario));
+  const [dataPrevista, setDataPrevista] = useState(c.data_prevista_entrega || '');
+
+  function guardar() {
+    db.atualizarCompra(c.id, {
+      fornecedor,
+      quantidade: Number(quantidade),
+      preco_unitario: Number(precoUnitario),
+      data_prevista_entrega: dataPrevista || null,
+    });
+    setAEditar(false);
+  }
+
+  if (aEditar) {
+    return (
+      <tr>
+        <td>{db.nomeProduto(c.produto_id)}</td>
+        <td><input value={fornecedor} onChange={e => setFornecedor(e.target.value)} style={{ minWidth: 110 }} /></td>
+        <td><input type="number" step="0.01" value={quantidade} onChange={e => setQuantidade(e.target.value)} style={{ width: 70 }} /></td>
+        <td><input type="number" step="0.01" value={precoUnitario} onChange={e => setPrecoUnitario(e.target.value)} style={{ width: 80 }} placeholder="preço un." /></td>
+        <td><input type="date" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} style={{ width: 130 }} /></td>
+        <td>—</td>
+        <td>
+          <div className="acoes-linha">
+            <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={guardar}>Guardar</button>
+            <button className="btn-icon" title="Cancelar" onClick={() => setAEditar(false)}>×</button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <tr>
       <td>{db.nomeProduto(c.produto_id)}</td>
@@ -2262,6 +2320,7 @@ function ConfirmarChegadaRow({ c, db, onConfirmar }) {
               {CANAIS_PAGAMENTO_SAIDA.map(cn => <option key={cn} value={cn}>{cn}</option>)}
             </select>
           )}
+          <button className="btn-icon" title="Editar" onClick={() => setAEditar(true)}>✎</button>
           <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={() => onConfirmar(c, c.pago ? c.canal_pagamento : canal)}>Confirmar chegada</button>
         </div>
       </td>

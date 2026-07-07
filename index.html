@@ -2992,13 +2992,18 @@ function Relatorios({ periodos }) {
   const saidasPorBucket = buckets.map(b => saidas.filter(m => (porDia ? m.data : m.data.slice(0, 7)) === b.key).reduce((s, m) => s + Number(m.valor), 0));
 
   const CANAIS_RELATORIO = ['Dinheiro', 'Cartão', 'Conta principal', 'Online'];
+  function canalDoMovimento(m) {
+    if (m.canal_pagamento) return m.canal_pagamento;
+    if (CANAIS_RELATORIO.includes(m.categoria)) return m.categoria;
+    return null;
+  }
   const saldoPorCanal = CANAIS_RELATORIO.map(canal => {
-    const entradasCanal = entradas.filter(m => m.canal_pagamento === canal).reduce((s, m) => s + Number(m.valor), 0);
-    const saidasCanal = saidas.filter(m => m.canal_pagamento === canal).reduce((s, m) => s + Number(m.valor), 0);
+    const entradasCanal = entradas.filter(m => canalDoMovimento(m) === canal).reduce((s, m) => s + Number(m.valor), 0);
+    const saidasCanal = saidas.filter(m => canalDoMovimento(m) === canal).reduce((s, m) => s + Number(m.valor), 0);
     return { canal, entradasCanal, saidasCanal, saldoCanal: entradasCanal - saidasCanal };
   });
-  const semCanalEntradas = entradas.filter(m => !m.canal_pagamento).reduce((s, m) => s + Number(m.valor), 0);
-  const semCanalSaidas = saidas.filter(m => !m.canal_pagamento).reduce((s, m) => s + Number(m.valor), 0);
+  const semCanalEntradas = entradas.filter(m => !canalDoMovimento(m)).reduce((s, m) => s + Number(m.valor), 0);
+  const semCanalSaidas = saidas.filter(m => !canalDoMovimento(m)).reduce((s, m) => s + Number(m.valor), 0);
 
   return (
     <div>

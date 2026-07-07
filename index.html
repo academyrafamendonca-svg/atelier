@@ -790,6 +790,16 @@ function useMockDB() {
     supaInsertFinanceiro(mov);
   }
 
+  function atualizarMovimentoFinanceiro(id, patch) {
+    setFinanceiro(f => f.map(m => m.id === id ? { ...m, ...patch } : m));
+    supabase.from('financeiro_movimentos').update(patch).eq('id', id).then(({ error }) => { if (error) console.error('Supabase (financeiro update):', error.message); });
+  }
+
+  function removerMovimentoFinanceiro(id) {
+    setFinanceiro(f => f.filter(m => m.id !== id));
+    supaDeleteFinanceiro(id);
+  }
+
   function registarVenda({ servico, cliente, valor, forma_pagamento, atendidoPor, data }) {
     const dataVenda = data || hoje();
     const vendaId = uid();
@@ -1019,7 +1029,7 @@ function useMockDB() {
     canaisAquisicao, anuncios, parcerias, influencers, marketingOffline, indicacoes, estrategiasVendas, funisVendas, marcacoes, listaEspera, eventosCalendario, comissoes, despesasRecorrentes, investimentosExternos, colaboradorasNomes,
     canaisOps, anunciosOps, parceriasOps, influencersOps, offlineOps, indicacoesOps, estrategiasOps, funisOps, marcacoesOps, listaEsperaOps, eventosOps, despesasRecorrentesOps, gerarContasRecorrentesDoMes, investimentosOps, colaboradorasNomesOps, fornecedoresNomes, fornecedoresNomesOps,
     nomeColaborador, nomeProduto, unidadeProduto, produtosEstoqueBaixo, carregadoDoSupabase,
-    pedirReposicao, cancelarPedido, removerItemLista, registarCompra, atualizarCompra, confirmarChegadaCompra, lancarMovimentoManual, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
+    pedirReposicao, cancelarPedido, removerItemLista, registarCompra, atualizarCompra, confirmarChegadaCompra, lancarMovimentoManual, atualizarMovimentoFinanceiro, removerMovimentoFinanceiro, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
     entregasEstoque, entregarDoEstoque, confirmarRecebimentoEstoque, resolverPedidoNaSaida,
     alicatesAfiar, pedirAfiacao, marcarEntregueAmolador, marcarDevolvidoAmolador, confirmarRecebimentoAfiacao, quantidadeAfiadaUltimos3Meses,
     adicionarComissao, marcarComissaoPaga, desfazerComissaoPaga, calcularComissao,
@@ -2553,6 +2563,61 @@ function gerarBuckets(inicio, fim) {
   return { buckets, porDia };
 }
 
+function MovimentoRow({ m, db }) {
+  const [aEditar, setAEditar] = useState(false);
+  const [categoria, setCategoria] = useState(m.categoria);
+  const [descricao, setDescricao] = useState(m.descricao || '');
+  const [valor, setValor] = useState(String(m.valor));
+  const [data, setData] = useState(m.data);
+  const [canal, setCanal] = useState(m.canal_pagamento || '');
+
+  function guardar() {
+    db.atualizarMovimentoFinanceiro(m.id, { categoria, descricao, valor: Number(valor), data, canal_pagamento: canal || null });
+    setAEditar(false);
+  }
+
+  function apagar() {
+    if (window.confirm('Apagar este movimento? Esta ação não pode ser desfeita.')) {
+      db.removerMovimentoFinanceiro(m.id);
+    }
+  }
+
+  if (aEditar) {
+    return (
+      <tr>
+        <td><input type="date" value={data} onChange={e => setData(e.target.value)} style={{ width: 130 }} /></td>
+        <td><span className={'badge ' + (m.tipo === 'entrada' ? 'badge-ok' : 'badge-baixo')}>{m.tipo}</span></td>
+        <td><input value={categoria} onChange={e => setCategoria(e.target.value)} style={{ minWidth: 100 }} /></td>
+        <td><input value={descricao} onChange={e => setDescricao(e.target.value)} style={{ minWidth: 140 }} /></td>
+        <td><input value={canal} onChange={e => setCanal(e.target.value)} placeholder="canal" style={{ width: 100 }} /></td>
+        <td><input type="number" step="0.01" value={valor} onChange={e => setValor(e.target.value)} style={{ width: 90 }} /></td>
+        <td>
+          <div className="acoes-linha">
+            <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={guardar}>Guardar</button>
+            <button className="btn-icon" title="Cancelar" onClick={() => setAEditar(false)}>×</button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr>
+      <td>{new Date(m.data).toLocaleDateString('pt-PT')}</td>
+      <td><span className={'badge ' + (m.tipo === 'entrada' ? 'badge-ok' : 'badge-baixo')}>{m.tipo}</span></td>
+      <td>{m.categoria}</td><td>{m.descricao}</td>
+      <td>{m.canal_pagamento || '—'}</td>
+      <td>{m.tipo === 'saida' ? '-' : '+'}{Number(m.valor).toFixed(2)} €</td>
+      <td>
+        <div className="acoes-linha">
+          <button className="btn-icon" title="Editar" onClick={() => setAEditar(true)}>✎</button>
+          <button className="btn-icon perigo" title="Apagar" onClick={apagar}>🗑</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function Financeiro() {
   const { profile } = useAuth();
   const db = useDB();
@@ -2639,17 +2704,9 @@ function Financeiro() {
           {mostrarNovoMovimento && <div style={{ marginBottom: 16 }}><NovoMovimento /></div>}
           <div className="card">
             <table>
-              <thead><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Canal</th><th>Valor</th></tr></thead>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Canal</th><th>Valor</th><th></th></tr></thead>
               <tbody>
-                {movimentosFiltrados.map(m => (
-                  <tr key={m.id}>
-                    <td>{new Date(m.data).toLocaleDateString('pt-PT')}</td>
-                    <td><span className={'badge ' + (m.tipo === 'entrada' ? 'badge-ok' : 'badge-baixo')}>{m.tipo}</span></td>
-                    <td>{m.categoria}</td><td>{m.descricao}</td>
-                    <td>{m.canal_pagamento || '—'}</td>
-                    <td>{m.tipo === 'saida' ? '-' : '+'}{Number(m.valor).toFixed(2)} €</td>
-                  </tr>
-                ))}
+                {movimentosFiltrados.map(m => <MovimentoRow key={m.id} m={m} db={db} />)}
               </tbody>
             </table>
             {movimentosFiltrados.length === 0 && <p className="empty-state">{pesquisa ? 'Nada encontrado para essa pesquisa.' : 'Sem movimentos este mês.'}</p>}

@@ -872,7 +872,7 @@ function useMockDB() {
       const novo = { id: uid(), criado_em: new Date().toISOString(), ...item };
       setListaEspera(l => [novo, ...l]);
       supabase.from('lista_espera').insert({
-        id: novo.id, cliente: novo.cliente, servico: novo.servico, contacto: novo.contacto, data_preferida: novo.data_preferida || null, horario_preferido: novo.horario_preferido || null,
+        id: novo.id, cliente: novo.cliente, servico: novo.servico, contacto: novo.contacto, data_preferida: novo.data_preferida || null, horario_preferido: novo.horario_preferido || null, observacoes: novo.observacoes || null,
       }).then(({ error }) => { if (error) console.error('Supabase (lista_espera insert):', error.message); });
     },
     remove: (id) => {
@@ -1301,13 +1301,25 @@ function Agenda() {
 
 function ListaEspera() {
   const db = useDB();
-  const vazio = { cliente: '', servico: '', contacto: '', data_preferida: '', horario_preferido: '', notas: '' };
+  const vazio = { cliente: '', servico: '', contacto: '', data_preferida: '', horarios: [], observacoes: '' };
   const [form, setForm] = useState(vazio);
+  const [novoHorario, setNovoHorario] = useState('');
+
+  function adicionarHorario() {
+    if (!novoHorario) return;
+    if (form.horarios.includes(novoHorario)) { setNovoHorario(''); return; }
+    setForm({ ...form, horarios: [...form.horarios, novoHorario].sort() });
+    setNovoHorario('');
+  }
+
+  function removerHorario(h) {
+    setForm({ ...form, horarios: form.horarios.filter(x => x !== h) });
+  }
 
   function adicionar(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!form.cliente.trim()) return;
-    db.listaEsperaOps.add(form);
+    db.listaEsperaOps.add({ ...form, horario_preferido: form.horarios.join(', ') });
     setForm(vazio);
   }
 
@@ -1321,26 +1333,47 @@ function ListaEspera() {
           <div style={{ minWidth: 160 }}><label>Cliente</label><input value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Nome" /></div>
           <div style={{ minWidth: 150 }}><label>Serviço</label><input value={form.servico} onChange={e => setForm({ ...form, servico: e.target.value })} placeholder="Ex: Manicure Gel" /></div>
           <div><label>Contacto</label><input value={form.contacto} onChange={e => setForm({ ...form, contacto: e.target.value })} placeholder="Telemóvel" /></div>
-          <div><label>Dia e horário preferidos</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input type="date" value={form.data_preferida} onChange={e => setForm({ ...form, data_preferida: e.target.value })} />
-              <input type="time" value={form.horario_preferido} onChange={e => setForm({ ...form, horario_preferido: e.target.value })} />
-            </div>
-          </div>
-          <div><button className="btn" type="button" onClick={adicionar} style={{ width: '100%', justifyContent: 'center' }}>Adicionar</button></div>
+          <div><label>Dia preferido</label><input type="date" value={form.data_preferida} onChange={e => setForm({ ...form, data_preferida: e.target.value })} /></div>
         </form>
+
+        <div style={{ marginTop: 14 }}>
+          <label>Horários possíveis</label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} style={{ maxWidth: 140 }} />
+            <button className="btn btn-secundario" type="button" onClick={adicionarHorario}>+ Adicionar horário</button>
+          </div>
+          {form.horarios.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+              {form.horarios.map(h => (
+                <span key={h} className="badge badge-pendente" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {h}
+                  <button onClick={() => removerHorario(h)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700, padding: 0, fontSize: 13 }}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label>Observações</label>
+          <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} placeholder="Ex: prefere ao fim de semana, alérgica a X…" rows={2} style={{ resize: 'vertical' }} />
+        </div>
+
+        <button className="btn" type="button" onClick={adicionar} style={{ marginTop: 14 }}>Adicionar à lista de espera</button>
       </div>
 
       <div className="card">
         <table>
-          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Dia e horário</th><th></th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Dia</th><th>Horários</th><th>Observações</th><th></th></tr></thead>
           <tbody>
             {db.listaEspera.map(le => (
               <tr key={le.id}>
                 <td>{le.cliente}</td>
                 <td>{le.servico || '—'}</td>
                 <td>{le.contacto || '—'}</td>
-                <td>{le.data_preferida ? new Date(le.data_preferida + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}{le.horario_preferido ? ` às ${le.horario_preferido}` : ''}</td>
+                <td>{le.data_preferida ? new Date(le.data_preferida + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}</td>
+                <td>{le.horario_preferido || '—'}</td>
+                <td>{le.observacoes || '—'}</td>
                 <td><button className="btn btn-secundario" onClick={() => db.listaEsperaOps.remove(le.id)}>Remover</button></td>
               </tr>
             ))}

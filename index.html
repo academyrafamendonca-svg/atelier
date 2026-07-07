@@ -1299,27 +1299,36 @@ function Agenda() {
   );
 }
 
+const PERIODOS_DIA = ['Manhã', 'Hora de almoço', 'Depois do almoço', 'Meio da tarde', 'Final do dia'];
+
 function ListaEspera() {
   const db = useDB();
-  const vazio = { cliente: '', servico: '', contacto: '', data_preferida: '', horarios: [], observacoes: '' };
+  const vazio = { cliente: '', servico: '', contacto: '', dias: [], periodos: [], observacoes: '' };
   const [form, setForm] = useState(vazio);
-  const [novoHorario, setNovoHorario] = useState('');
+  const [novoDia, setNovoDia] = useState('');
 
-  function adicionarHorario() {
-    if (!novoHorario) return;
-    if (form.horarios.includes(novoHorario)) { setNovoHorario(''); return; }
-    setForm({ ...form, horarios: [...form.horarios, novoHorario].sort() });
-    setNovoHorario('');
+  function adicionarDia() {
+    if (!novoDia) return;
+    if (form.dias.includes(novoDia)) { setNovoDia(''); return; }
+    setForm({ ...form, dias: [...form.dias, novoDia].sort() });
+    setNovoDia('');
   }
 
-  function removerHorario(h) {
-    setForm({ ...form, horarios: form.horarios.filter(x => x !== h) });
+  function removerDia(d) {
+    setForm({ ...form, dias: form.dias.filter(x => x !== d) });
+  }
+
+  function alternarPeriodo(p) {
+    setForm(f => ({ ...f, periodos: f.periodos.includes(p) ? f.periodos.filter(x => x !== p) : [...f.periodos, p] }));
   }
 
   function adicionar(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!form.cliente.trim()) return;
-    db.listaEsperaOps.add({ ...form, horario_preferido: form.horarios.join(', ') });
+    db.listaEsperaOps.add({
+      cliente: form.cliente, servico: form.servico, contacto: form.contacto, observacoes: form.observacoes,
+      data_preferida: form.dias.join(', '), horario_preferido: form.periodos.join(', '),
+    });
     setForm(vazio);
   }
 
@@ -1333,25 +1342,45 @@ function ListaEspera() {
           <div style={{ minWidth: 160 }}><label>Cliente</label><input value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Nome" /></div>
           <div style={{ minWidth: 150 }}><label>Serviço</label><input value={form.servico} onChange={e => setForm({ ...form, servico: e.target.value })} placeholder="Ex: Manicure Gel" /></div>
           <div><label>Contacto</label><input value={form.contacto} onChange={e => setForm({ ...form, contacto: e.target.value })} placeholder="Telemóvel" /></div>
-          <div><label>Dia preferido</label><input type="date" value={form.data_preferida} onChange={e => setForm({ ...form, data_preferida: e.target.value })} /></div>
         </form>
 
         <div style={{ marginTop: 14 }}>
-          <label>Horários possíveis</label>
+          <label>Dias disponíveis</label>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            <input type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} style={{ maxWidth: 140 }} />
-            <button className="btn btn-secundario" type="button" onClick={adicionarHorario}>+ Adicionar horário</button>
+            <input type="date" value={novoDia} onChange={e => setNovoDia(e.target.value)} style={{ maxWidth: 160 }} />
+            <button className="btn btn-secundario" type="button" onClick={adicionarDia}>+ Adicionar dia</button>
           </div>
-          {form.horarios.length > 0 && (
+          {form.dias.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
-              {form.horarios.map(h => (
-                <span key={h} className="badge badge-pendente" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {h}
-                  <button onClick={() => removerHorario(h)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700, padding: 0, fontSize: 13 }}>×</button>
+              {form.dias.map(d => (
+                <span key={d} className="badge badge-pendente" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {new Date(d + 'T00:00:00').toLocaleDateString('pt-PT')}
+                  <button onClick={() => removerDia(d)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700, padding: 0, fontSize: 13 }}>×</button>
                 </span>
               ))}
             </div>
           )}
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label>Período preferido (podes escolher mais do que um)</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {PERIODOS_DIA.map(p => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => alternarPeriodo(p)}
+                className={'badge'}
+                style={{
+                  border: 'none', cursor: 'pointer',
+                  background: form.periodos.includes(p) ? 'var(--cor-vinho)' : '#F1ECE8',
+                  color: form.periodos.includes(p) ? '#fff' : 'var(--cor-tinta-suave)',
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ marginTop: 14 }}>
@@ -1364,15 +1393,15 @@ function ListaEspera() {
 
       <div className="card">
         <table>
-          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Dia</th><th>Horários</th><th>Observações</th><th></th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Dias</th><th>Período</th><th>Observações</th><th></th></tr></thead>
           <tbody>
             {db.listaEspera.map(le => (
               <tr key={le.id}>
                 <td>{le.cliente}</td>
                 <td>{le.servico || '—'}</td>
                 <td>{le.contacto || '—'}</td>
-                <td>{le.data_preferida ? new Date(le.data_preferida + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}</td>
-                <td>{le.horario_preferido || '—'}</td>
+                <td style={{ fontSize: 12.5 }}>{le.data_preferida ? le.data_preferida.split(', ').map(d => new Date(d + 'T00:00:00').toLocaleDateString('pt-PT')).join(', ') : '—'}</td>
+                <td style={{ fontSize: 12.5 }}>{le.horario_preferido || '—'}</td>
                 <td>{le.observacoes || '—'}</td>
                 <td><button className="btn btn-secundario" onClick={() => db.listaEsperaOps.remove(le.id)}>Remover</button></td>
               </tr>

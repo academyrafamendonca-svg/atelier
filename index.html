@@ -2991,6 +2991,15 @@ function Relatorios({ periodos }) {
   const entradasPorBucket = buckets.map(b => entradas.filter(m => (porDia ? m.data : m.data.slice(0, 7)) === b.key).reduce((s, m) => s + Number(m.valor), 0));
   const saidasPorBucket = buckets.map(b => saidas.filter(m => (porDia ? m.data : m.data.slice(0, 7)) === b.key).reduce((s, m) => s + Number(m.valor), 0));
 
+  const CANAIS_RELATORIO = ['Dinheiro', 'Cartão', 'Conta principal', 'Online'];
+  const saldoPorCanal = CANAIS_RELATORIO.map(canal => {
+    const entradasCanal = entradas.filter(m => m.canal_pagamento === canal).reduce((s, m) => s + Number(m.valor), 0);
+    const saidasCanal = saidas.filter(m => m.canal_pagamento === canal).reduce((s, m) => s + Number(m.valor), 0);
+    return { canal, entradasCanal, saidasCanal, saldoCanal: entradasCanal - saidasCanal };
+  });
+  const semCanalEntradas = entradas.filter(m => !m.canal_pagamento).reduce((s, m) => s + Number(m.valor), 0);
+  const semCanalSaidas = saidas.filter(m => !m.canal_pagamento).reduce((s, m) => s + Number(m.valor), 0);
+
   return (
     <div>
       <BotaoImprimir />
@@ -3086,6 +3095,38 @@ function Relatorios({ periodos }) {
           </table>
           {Object.keys(saidasPorCategoria).length === 0 && <p className="empty-state">Sem saídas neste período.</p>}
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <h3 style={{ marginBottom: 4 }}>Quanto temos de verdade, por canal</h3>
+        <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)', marginBottom: 14 }}>Entradas menos saídas de cada canal neste período — é o saldo real.</p>
+        <table>
+          <thead><tr><th>Canal</th><th>Entrou</th><th>Saiu</th><th>Saldo</th></tr></thead>
+          <tbody>
+            {saldoPorCanal.map(c => (
+              <tr key={c.canal}>
+                <td>{c.canal}</td>
+                <td style={{ color: 'var(--cor-sucesso)' }}>+{c.entradasCanal.toFixed(2)} €</td>
+                <td style={{ color: 'var(--cor-alerta)' }}>-{c.saidasCanal.toFixed(2)} €</td>
+                <td style={{ fontWeight: 700, color: c.saldoCanal >= 0 ? 'var(--cor-sucesso)' : 'var(--cor-alerta)' }}>{c.saldoCanal.toFixed(2)} €</td>
+              </tr>
+            ))}
+            {(semCanalEntradas > 0 || semCanalSaidas > 0) && (
+              <tr>
+                <td>Sem canal indicado</td>
+                <td style={{ color: 'var(--cor-sucesso)' }}>+{semCanalEntradas.toFixed(2)} €</td>
+                <td style={{ color: 'var(--cor-alerta)' }}>-{semCanalSaidas.toFixed(2)} €</td>
+                <td style={{ fontWeight: 700 }}>{(semCanalEntradas - semCanalSaidas).toFixed(2)} €</td>
+              </tr>
+            )}
+            <tr style={{ borderTop: '2px solid var(--cor-linha)' }}>
+              <td style={{ fontWeight: 700 }}>Total</td>
+              <td style={{ fontWeight: 700, color: 'var(--cor-sucesso)' }}>+{totalEntradas.toFixed(2)} €</td>
+              <td style={{ fontWeight: 700, color: 'var(--cor-alerta)' }}>-{totalSaidas.toFixed(2)} €</td>
+              <td style={{ fontWeight: 700 }}>{saldo.toFixed(2)} €</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );

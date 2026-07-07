@@ -872,7 +872,7 @@ function useMockDB() {
       const novo = { id: uid(), criado_em: new Date().toISOString(), ...item };
       setListaEspera(l => [novo, ...l]);
       supabase.from('lista_espera').insert({
-        id: novo.id, cliente: novo.cliente, servico: novo.servico, contacto: novo.contacto, data_preferida: novo.data_preferida || null,
+        id: novo.id, cliente: novo.cliente, servico: novo.servico, contacto: novo.contacto, data_preferida: novo.data_preferida || null, horario_preferido: novo.horario_preferido || null,
       }).then(({ error }) => { if (error) console.error('Supabase (lista_espera insert):', error.message); });
     },
     remove: (id) => {
@@ -1301,7 +1301,7 @@ function Agenda() {
 
 function ListaEspera() {
   const db = useDB();
-  const vazio = { cliente: '', servico: '', contacto: '', data_preferida: '', notas: '' };
+  const vazio = { cliente: '', servico: '', contacto: '', data_preferida: '', horario_preferido: '', notas: '' };
   const [form, setForm] = useState(vazio);
 
   function adicionar(e) {
@@ -1321,21 +1321,26 @@ function ListaEspera() {
           <div style={{ minWidth: 160 }}><label>Cliente</label><input value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Nome" /></div>
           <div style={{ minWidth: 150 }}><label>Serviço</label><input value={form.servico} onChange={e => setForm({ ...form, servico: e.target.value })} placeholder="Ex: Manicure Gel" /></div>
           <div><label>Contacto</label><input value={form.contacto} onChange={e => setForm({ ...form, contacto: e.target.value })} placeholder="Telemóvel" /></div>
-          <div><label>Data preferida</label><input type="date" value={form.data_preferida} onChange={e => setForm({ ...form, data_preferida: e.target.value })} /></div>
+          <div><label>Dia e horário preferidos</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input type="date" value={form.data_preferida} onChange={e => setForm({ ...form, data_preferida: e.target.value })} />
+              <input type="time" value={form.horario_preferido} onChange={e => setForm({ ...form, horario_preferido: e.target.value })} />
+            </div>
+          </div>
           <div><button className="btn" type="button" onClick={adicionar} style={{ width: '100%', justifyContent: 'center' }}>Adicionar</button></div>
         </form>
       </div>
 
       <div className="card">
         <table>
-          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Data preferida</th><th></th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Serviço</th><th>Contacto</th><th>Dia e horário</th><th></th></tr></thead>
           <tbody>
             {db.listaEspera.map(le => (
               <tr key={le.id}>
                 <td>{le.cliente}</td>
                 <td>{le.servico || '—'}</td>
                 <td>{le.contacto || '—'}</td>
-                <td>{le.data_preferida ? new Date(le.data_preferida + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}</td>
+                <td>{le.data_preferida ? new Date(le.data_preferida + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}{le.horario_preferido ? ` às ${le.horario_preferido}` : ''}</td>
                 <td><button className="btn btn-secundario" onClick={() => db.listaEsperaOps.remove(le.id)}>Remover</button></td>
               </tr>
             ))}

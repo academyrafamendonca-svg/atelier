@@ -416,7 +416,7 @@ function dataPrevistaPorUrgencia(urgencia) {
 
 const COLABORADORES_DEMO = [
   { id: 'u1', nome: 'Rafa Mendonça', funcao: 'Gestora / Admin', labelCurto: 'Gestão', areas: AREAS.map(a => a.key), is_admin: true, pin: '1111' },
-  { id: 'u2', nome: 'Receção', funcao: 'Fecho de caixa', labelCurto: 'Fecho de Caixa', areas: ['Financeiro'], is_admin: false, apenasFechoCaixa: true, pin: '2222' },
+  { id: 'u2', nome: 'Receção', funcao: 'Fecho de caixa', labelCurto: 'Fecho de Caixa', areas: ['Financeiro', 'Agenda'], is_admin: false, apenasFechoCaixa: true, pin: '2222' },
   { id: 'u3', nome: 'Compras', funcao: 'Lista de compras', labelCurto: 'Lista de Compras', areas: ['ListaCompras'], is_admin: false, pin: '3333' },
 ];
 
@@ -865,7 +865,7 @@ function useMockDB() {
     },
     update: (id, patch) => setColaboradorasNomes(c => c.map(x => x.id === id ? { ...x, ...patch } : x)),
   };
-  const fornecedoresNomesOps = criarLista(setFornecedoresNomes);
+  const fornecedoresNomesOps = criarListaSupabase(setFornecedoresNomes, 'fornecedores');
   const marcacoesOps = criarLista(setMarcacoes);
   const listaEsperaOps = {
     add: (item) => {
@@ -941,7 +941,7 @@ function useMockDB() {
         { data: espera, error: e16 },
         { data: comprasDb, error: e17 }, { data: saidasDb, error: e18 }, { data: entregasDb, error: e19 },
         { data: alicatesDb, error: e20 }, { data: conteudosDb, error: e21 },
-        { data: config, error: e22 },
+        { data: config, error: e22 }, { data: fornecs, error: e23 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -965,8 +965,9 @@ function useMockDB() {
         supabase.from('alicates_afiar').select('*').order('data_pedido', { ascending: false }),
         supabase.from('conteudos_marketing').select('*').order('data', { ascending: false }),
         supabase.from('configuracoes').select('*'),
+        supabase.from('fornecedores').select('*').order('nome'),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22, e23].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -993,6 +994,7 @@ function useMockDB() {
         if (limite) setLimiteGastosMensalLocal(Number(limite.valor));
         if (meta) setMetaMensalVendasLocal(Number(meta.valor));
       }
+      if (fornecs) setFornecedoresNomes(fornecs);
 
       if (recorrentesDb && recorrentesDb.length > 0) {
         setModelosSemanais(recorrentesDb);
@@ -2640,6 +2642,10 @@ function Financeiro() {
       <div>
         <div className="topbar"><div><p className="eyebrow">Financeiro</p><h1>Fecho de caixa</h1></div></div>
         <FechoCaixa />
+        <div style={{ marginTop: 30 }}>
+          <div className="topbar"><div><h1 style={{ fontSize: 20 }}>Contas a receber</h1></div></div>
+          <ContasReceber />
+        </div>
       </div>
     );
   }

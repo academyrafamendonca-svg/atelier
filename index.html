@@ -2991,11 +2991,11 @@ function Relatorios({ periodos }) {
   const entradasPorBucket = buckets.map(b => entradas.filter(m => (porDia ? m.data : m.data.slice(0, 7)) === b.key).reduce((s, m) => s + Number(m.valor), 0));
   const saidasPorBucket = buckets.map(b => saidas.filter(m => (porDia ? m.data : m.data.slice(0, 7)) === b.key).reduce((s, m) => s + Number(m.valor), 0));
 
-  const CANAIS_RELATORIO = ['Dinheiro', 'Cartão', 'Conta principal', 'Online'];
+  const CANAIS_RELATORIO = ['Dinheiro', 'Conta principal', 'Online'];
   function canalDoMovimento(m) {
-    if (m.canal_pagamento) return m.canal_pagamento;
-    if (CANAIS_RELATORIO.includes(m.categoria)) return m.categoria;
-    return null;
+    let canal = m.canal_pagamento || (['Dinheiro', 'Cartão', 'Conta principal', 'Online'].includes(m.categoria) ? m.categoria : null);
+    if (canal === 'Cartão') canal = 'Conta principal';
+    return canal;
   }
   const saldoPorCanal = CANAIS_RELATORIO.map(canal => {
     const entradasCanal = entradas.filter(m => canalDoMovimento(m) === canal).reduce((s, m) => s + Number(m.valor), 0);
@@ -3110,7 +3110,7 @@ function Relatorios({ periodos }) {
           <tbody>
             {saldoPorCanal.map(c => (
               <tr key={c.canal}>
-                <td>{c.canal}</td>
+                <td>{c.canal === 'Conta principal' ? 'Conta principal / Cartão' : c.canal}</td>
                 <td style={{ color: 'var(--cor-sucesso)' }}>+{c.entradasCanal.toFixed(2)} €</td>
                 <td style={{ color: 'var(--cor-alerta)' }}>-{c.saidasCanal.toFixed(2)} €</td>
                 <td style={{ fontWeight: 700, color: c.saldoCanal >= 0 ? 'var(--cor-sucesso)' : 'var(--cor-alerta)' }}>{c.saldoCanal.toFixed(2)} €</td>

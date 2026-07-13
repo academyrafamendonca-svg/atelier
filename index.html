@@ -716,15 +716,15 @@ function useMockDB() {
     supaInsertPendente(item);
   }
 
-  function marcarPendenteComoPago(id, canal) {
+  async function marcarPendenteComoPago(id, canal) {
     const item = pendentesPagamento.find(p => p.id === id);
     if (!item) return;
     const movId = uid();
     setPendentesPagamento(p => p.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canal, movimento_id: movId, data_pagamento: hoje() } : x));
-    supaUpdatePendente(id, { status: 'pago', canal_pagamento: canal, movimento_id: movId, data_pagamento: hoje() });
     const mov = { id: movId, tipo: 'entrada', categoria: canal || 'Pendente recebido', valor: item.valor, descricao: `${item.nome} — pagamento recebido (${canal})`, origem: 'pendente', criado_por: item.criado_por, data: hoje() };
     setFinanceiro(f => [mov, ...f]);
-    supaInsertFinanceiro(mov);
+    await supaInsertFinanceiro(mov);
+    await supaUpdatePendente(id, { status: 'pago', canal_pagamento: canal, movimento_id: movId, data_pagamento: hoje() });
   }
 
   function desfazerPendentePago(id) {
@@ -765,15 +765,15 @@ function useMockDB() {
     });
   }
 
-  function marcarContaPagaComoPaga(id, canalPagamento) {
+  async function marcarContaPagaComoPaga(id, canalPagamento) {
     const item = contasPagar.find(c => c.id === id);
     if (!item) return;
     const movId = uid();
     setContasPagar(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId, data_pagamento: hoje() } : x));
-    supaUpdateContaPagar(id, { status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId, data_pagamento: hoje() });
     const mov = { id: movId, tipo: 'saida', categoria: item.categoria || 'Extras', valor: item.valor, descricao: `${item.fornecedor} — conta paga`, origem: 'conta_pagar', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: hoje() };
     setFinanceiro(f => [mov, ...f]);
-    supaInsertFinanceiro(mov);
+    await supaInsertFinanceiro(mov);
+    await supaUpdateContaPagar(id, { status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId, data_pagamento: hoje() });
   }
 
   function desfazerContaPaga(id) {
@@ -2868,6 +2868,13 @@ function FechoCaixa() {
   const historico = [...db.fechosCaixa].sort((a, b) => b.data.localeCompare(a.data)).slice(0, 10);
   const valoresCanais = [Number(dinheiro) || 0, Number(cartao) || 0, Number(online) || 0, totalPendente];
 
+  const ivaDoDia = totalDia - (totalDia / 1.23);
+  const mesAtual = data.slice(0, 7);
+  const entradasDoMes = db.financeiro.filter(m => m.tipo === 'entrada' && m.data.slice(0, 7) === mesAtual && m.origem === 'fecho_caixa').reduce((s, m) => s + Number(m.valor), 0);
+  const ivaGeradoNoMes = entradasDoMes - (entradasDoMes / 1.23);
+  const ivaJaReservadoNoMes = db.financeiro.filter(m => m.tipo === 'saida' && m.categoria === 'Impostos' && m.data.slice(0, 7) === mesAtual).reduce((s, m) => s + Number(m.valor), 0);
+  const ivaPorReservar = ivaGeradoNoMes - ivaJaReservadoNoMes;
+
   return (
     <div>
       <BotaoImprimir />
@@ -2887,6 +2894,19 @@ function FechoCaixa() {
           <button className="btn" type="button" onClick={lancar}>{fechoExistente ? 'Atualizar entradas' : 'Lançar entradas'}</button>
           {ok && <span style={{ marginLeft: 12, color: 'var(--cor-sucesso)', fontSize: 13 }}>Lançado ✓</span>}
         </form>
+      </div>
+
+      <div className="grid grid-2" style={{ marginBottom: 22 }}>
+        <div className="card" style={{ borderColor: 'var(--cor-dourado)' }}>
+          <p className="stat-label">IVA deste dia (23%, já incluído no total)</p>
+          <p className="stat-value">{ivaDoDia.toFixed(2)} €</p>
+          <p style={{ fontSize: 12, color: 'var(--cor-tinta-suave)', marginTop: 4 }}>Reserva este valor à parte — não o gastes, é para entregar ao Estado.</p>
+        </div>
+        <div className="card" style={{ borderColor: ivaPorReservar > 0 ? 'var(--cor-alerta)' : 'var(--cor-sucesso)' }}>
+          <p className="stat-label">IVA por reservar este mês</p>
+          <p className="stat-value" style={{ color: ivaPorReservar > 0 ? 'var(--cor-alerta)' : 'var(--cor-sucesso)' }}>{ivaPorReservar.toFixed(2)} €</p>
+          <p style={{ fontSize: 12, color: 'var(--cor-tinta-suave)', marginTop: 4 }}>Gerado: {ivaGeradoNoMes.toFixed(2)} € · Já reservado: {ivaJaReservadoNoMes.toFixed(2)} €. Quando retirares dinheiro para o IVA, lança-o como saída, categoria "Impostos".</p>
+        </div>
       </div>
 
       <div className="card no-print" style={{ marginBottom: 22 }}>

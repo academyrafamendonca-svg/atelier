@@ -314,15 +314,30 @@ async function supaDeleteDespesaRecorrente(id) {
   if (error) console.error('Supabase (despesas_recorrentes delete):', error.message);
 }
 async function supaInsertComissao(c) {
-  const { error } = await supabase.from('comissoes').insert({
+  const base = {
     id: c.id, profissional: c.profissional, mes: c.mes, faturacao_bruto: c.faturacao_bruto,
     status: c.status, criado_por: c.criado_por || null,
-  });
+  };
+  let { error } = await supabase.from('comissoes').insert({ ...base, ajuste: c.ajuste || 0, nota_ajuste: c.nota_ajuste || null });
+  if (error) {
+    // se as colunas ajuste / nota_ajuste ainda não existirem, guarda pelo menos o essencial
+    console.warn('Supabase (comissoes insert com ajuste):', error.message);
+    ({ error } = await supabase.from('comissoes').insert(base));
+  }
   if (error) console.error('Supabase (comissoes insert):', error.message);
 }
 async function supaUpdateComissao(id, patch) {
-  const { error } = await supabase.from('comissoes').update(patch).eq('id', id);
+  let { error } = await supabase.from('comissoes').update(patch).eq('id', id);
+  if (error && ('ajuste' in patch || 'nota_ajuste' in patch)) {
+    console.warn('Supabase (comissoes update com ajuste):', error.message);
+    const { ajuste, nota_ajuste, ...resto } = patch;
+    ({ error } = Object.keys(resto).length ? await supabase.from('comissoes').update(resto).eq('id', id) : { error: null });
+  }
   if (error) console.error('Supabase (comissoes update):', error.message);
+}
+async function supaDeleteComissao(id) {
+  const { error } = await supabase.from('comissoes').delete().eq('id', id);
+  if (error) console.error('Supabase (comissoes delete):', error.message);
 }
 
 async function supaInsertCompra(c) {
@@ -446,6 +461,17 @@ function useMockDB() {
   const [alicatesAfiar, setAlicatesAfiar] = useState([]);
   const [limiteGastosMensal, setLimiteGastosMensalLocal] = useState(1500);
   const [metaMensalVendas, setMetaMensalVendasLocal] = useState(4000);
+  const [regraComissao, setRegraComissaoLocal] = useState({ limite: 2460, pctBase: 50, pctAcima: 60, semIva: true });
+  function setRegraComissao(nova) {
+    setRegraComissaoLocal(nova);
+    const linhas = [
+      { chave: 'comissao_limite', valor: Number(nova.limite) || 0 },
+      { chave: 'comissao_pct_base', valor: Number(nova.pctBase) || 0 },
+      { chave: 'comissao_pct_acima', valor: Number(nova.pctAcima) || 0 },
+      { chave: 'comissao_sem_iva', valor: nova.semIva ? 1 : 0 },
+    ];
+    supabase.from('configuracoes').upsert(linhas).then(({ error }) => { if (error) console.error('Supabase (configuracoes upsert):', error.message); });
+  }
   function setLimiteGastosMensal(valor) {
     setLimiteGastosMensalLocal(valor);
     supabase.from('configuracoes').upsert({ chave: 'limite_gastos_mensal', valor }).then(({ error }) => { if (error) console.error('Supabase (configuracoes upsert):', error.message); });
@@ -473,6 +499,7 @@ function useMockDB() {
   const [investimentosExternos, setInvestimentosExternos] = useState([]);
   const [eventosCalendario, setEventosCalendario] = useState([]);
   const [comissoes, setComissoes] = useState([]);
+  const [descontosFixos, setDescontosFixos] = useState([]);
   const [despesasRecorrentes, setDespesasRecorrentes] = useState([]);
   const [tarefas, setTarefas] = useState([]);
   const [modelosSemanais, setModelosSemanais] = useState([]);
@@ -599,16 +626,36 @@ function useMockDB() {
     setCompras(c => c.map(item => item.id === compraId ? { ...item, recebido: true, confirmado_por: confirmadoPor, confirmado_em: new Date().toISOString() } : item));
   }
 
-  function calcularComissao(bruto) {
-    const semIva = bruto / 1.23;
-    const percentagem = bruto > 2460 ? 0.6 : 0.5;
-    return semIva * percentagem;
+  function percentagemComissao(bruto) {
+    return Number(bruto) > Number(regraComissao.limite) ? Number(regraComissao.pctAcima) : Number(regraComissao.pctBase);
   }
 
-  function adicionarComissao({ profissional, mes, faturacaoBruto, criadoPor }) {
-    const item = { id: uid(), profissional, mes, faturacao_bruto: faturacaoBruto, status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() };
+  function calcularComissao(bruto) {
+    const b = Number(bruto) || 0;
+    const baseCalculo = regraComissao.semIva ? b / 1.23 : b;
+    return baseCalculo * (percentagemComissao(b) / 100);
+  }
+
+  function valorFinalComissao(c) {
+    return calcularComissao(c.faturacao_bruto) + (Number(c.ajuste) || 0);
+  }
+
+  function adicionarComissao({ profissional, mes, faturacaoBruto, ajuste, notaAjuste, criadoPor }) {
+    const item = { id: uid(), profissional, mes, faturacao_bruto: faturacaoBruto, ajuste: Number(ajuste) || 0, nota_ajuste: notaAjuste || '', status: 'pendente', criado_por: criadoPor, criado_em: new Date().toISOString() };
     setComissoes(c => [item, ...c]);
     supaInsertComissao(item);
+  }
+
+  function atualizarComissao(id, patch) {
+    setComissoes(c => c.map(x => x.id === id ? { ...x, ...patch } : x));
+    supaUpdateComissao(id, patch);
+  }
+
+  function removerComissao(id) {
+    const item = comissoes.find(c => c.id === id);
+    if (item?.movimento_id) { setFinanceiro(f => f.filter(m => m.id !== item.movimento_id)); supaDeleteFinanceiro(item.movimento_id); }
+    setComissoes(c => c.filter(x => x.id !== id));
+    supaDeleteComissao(id);
   }
 
   function primeiroDiaProximoMes(mesStr) {
@@ -620,7 +667,7 @@ function useMockDB() {
   function marcarComissaoPaga(id, canalPagamento) {
     const item = comissoes.find(c => c.id === id);
     if (!item) return;
-    const valorComissao = calcularComissao(item.faturacao_bruto);
+    const valorComissao = valorFinalComissao(item);
     const dataPagamento = primeiroDiaProximoMes(item.mes);
     const movId = uid();
     setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId } : x));
@@ -866,6 +913,11 @@ function useMockDB() {
     update: (id, patch) => setColaboradorasNomes(c => c.map(x => x.id === id ? { ...x, ...patch } : x)),
   };
   const fornecedoresNomesOps = criarListaSupabase(setFornecedoresNomes, 'fornecedores');
+  const descontosFixosOps = criarListaSupabase(setDescontosFixos, 'descontos_fixos_comissao');
+  function descontoFixoDe(profissional) {
+    const lista = descontosFixos.filter(d => d.ativo !== false && d.profissional === profissional);
+    return { total: lista.reduce((s, d) => s + Number(d.valor || 0), 0), motivos: lista.map(d => d.motivo).filter(Boolean).join(', ') };
+  }
   const marcacoesOps = criarLista(setMarcacoes);
   const listaEsperaOps = {
     add: (item) => {
@@ -942,6 +994,7 @@ function useMockDB() {
         { data: comprasDb, error: e17 }, { data: saidasDb, error: e18 }, { data: entregasDb, error: e19 },
         { data: alicatesDb, error: e20 }, { data: conteudosDb, error: e21 },
         { data: config, error: e22 }, { data: fornecs, error: e23 },
+        { data: descFixos, error: e24 },
       ] = await Promise.all([
         supabase.from('produtos').select('*').order('nome'),
         supabase.from('lista_compras').select('*').order('criado_em', { ascending: false }),
@@ -966,8 +1019,9 @@ function useMockDB() {
         supabase.from('conteudos_marketing').select('*').order('data', { ascending: false }),
         supabase.from('configuracoes').select('*'),
         supabase.from('fornecedores').select('*').order('nome'),
+        supabase.from('descontos_fixos_comissao').select('*').order('profissional'),
       ]);
-      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22, e23].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
+      [e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22, e23, e24].forEach(e => { if (e) console.error('Supabase (load):', e.message); });
       if (prods) setProdutos(prods);
       if (lista) setListaCompras(lista);
       if (colabs) setColaboradorasNomes(colabs);
@@ -991,10 +1045,20 @@ function useMockDB() {
       if (config) {
         const limite = config.find(c => c.chave === 'limite_gastos_mensal');
         const meta = config.find(c => c.chave === 'meta_mensal_vendas');
+        const cfg = (k) => config.find(c => c.chave === k);
+        if (cfg('comissao_limite') || cfg('comissao_pct_base') || cfg('comissao_pct_acima') || cfg('comissao_sem_iva')) {
+          setRegraComissaoLocal(r => ({
+            limite: cfg('comissao_limite') ? Number(cfg('comissao_limite').valor) : r.limite,
+            pctBase: cfg('comissao_pct_base') ? Number(cfg('comissao_pct_base').valor) : r.pctBase,
+            pctAcima: cfg('comissao_pct_acima') ? Number(cfg('comissao_pct_acima').valor) : r.pctAcima,
+            semIva: cfg('comissao_sem_iva') ? Number(cfg('comissao_sem_iva').valor) === 1 : r.semIva,
+          }));
+        }
         if (limite) setLimiteGastosMensalLocal(Number(limite.valor));
         if (meta) setMetaMensalVendasLocal(Number(meta.valor));
       }
       if (fornecs) setFornecedoresNomes(fornecs);
+      if (descFixos) setDescontosFixos(descFixos);
 
       if (recorrentesDb && recorrentesDb.length > 0) {
         setModelosSemanais(recorrentesDb);
@@ -1034,7 +1098,7 @@ function useMockDB() {
     pedirReposicao, cancelarPedido, removerItemLista, registarCompra, atualizarCompra, confirmarChegadaCompra, lancarMovimentoManual, atualizarMovimentoFinanceiro, removerMovimentoFinanceiro, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
     entregasEstoque, entregarDoEstoque, confirmarRecebimentoEstoque, resolverPedidoNaSaida,
     alicatesAfiar, pedirAfiacao, marcarEntregueAmolador, marcarDevolvidoAmolador, confirmarRecebimentoAfiacao, quantidadeAfiadaUltimos3Meses,
-    adicionarComissao, marcarComissaoPaga, desfazerComissaoPaga, calcularComissao,
+    adicionarComissao, atualizarComissao, removerComissao, marcarComissaoPaga, desfazerComissaoPaga, calcularComissao, valorFinalComissao, percentagemComissao, regraComissao, setRegraComissao, descontosFixos, descontosFixosOps, descontoFixoDe,
     adicionarPendente, marcarPendenteComoPago, desfazerPendentePago, adicionarContaPagar, atualizarContaPagar, removerContaPagar, marcarContaPagaComoPaga, desfazerContaPaga,
     criarConteudo, atualizarStatusConteudo, criarTarefa, atualizarStatusTarefa,
     modelosSemanais, adicionarModeloSemanal, removerModeloSemanal, atualizarModeloSemanal,
@@ -3341,7 +3405,7 @@ function FluxoDeCaixaVisaoGeral() {
   const saldoAtual = db.financeiro.reduce((s, m) => s + (m.tipo === 'entrada' ? Number(m.valor) : -Number(m.valor)), 0);
   const aReceber = db.pendentesPagamento.filter(p => p.status === 'pendente').reduce((s, p) => s + Number(p.valor), 0);
   const aPagarContas = db.contasPagar.filter(c => c.status === 'pendente').reduce((s, c) => s + Number(c.valor), 0);
-  const aPagarComissoes = db.comissoes.filter(c => c.status === 'pendente').reduce((s, c) => s + db.calcularComissao(c.faturacao_bruto), 0);
+  const aPagarComissoes = db.comissoes.filter(c => c.status === 'pendente').reduce((s, c) => s + db.valorFinalComissao(c), 0);
   const totalAPagar = aPagarContas + aPagarComissoes;
   const saldoProjetado = saldoAtual + aReceber - totalAPagar;
 
@@ -3553,59 +3617,245 @@ function PendenteRow({ p, db }) {
 }
 
 /* ---------- Comissões ---------- */
+function CampoProfissional({ valor, onChange, db }) {
+  const nomes = db.colaboradorasNomes.map(c => c.nome);
+  const [outra, setOutra] = useState(valor && !nomes.includes(valor));
+  if (outra) {
+    return (
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input value={valor} onChange={e => onChange(e.target.value)} placeholder="Nome" style={{ flex: 1 }} />
+        {nomes.length > 0 && <button className="btn-icon" type="button" title="Escolher da lista" onClick={() => { setOutra(false); onChange(''); }}>☰</button>}
+      </div>
+    );
+  }
+  return (
+    <select value={valor} onChange={e => { if (e.target.value === '__outra__') { setOutra(true); onChange(''); } else onChange(e.target.value); }}>
+      <option value="">Seleciona…</option>
+      {nomes.map(n => <option key={n} value={n}>{n}</option>)}
+      <option value="__outra__">Outra pessoa…</option>
+    </select>
+  );
+}
+
 function ComissaoRow({ c, db }) {
   const [canal, setCanal] = useState(CANAIS_PAGAMENTO_SAIDA[0]);
-  const valorComissao = db.calcularComissao(c.faturacao_bruto);
-  const percentagem = c.faturacao_bruto > 2460 ? 60 : 50;
+  const [aEditar, setAEditar] = useState(false);
+  const [form, setForm] = useState({ profissional: c.profissional, mes: c.mes, faturacao_bruto: String(c.faturacao_bruto), ajuste: String(c.ajuste || ''), nota_ajuste: c.nota_ajuste || '' });
+  const calculado = db.calcularComissao(c.faturacao_bruto);
+  const ajuste = Number(c.ajuste) || 0;
+  const valorFinal = calculado + ajuste;
+  const percentagem = db.percentagemComissao(c.faturacao_bruto);
+
+  function guardar() {
+    if (!form.profissional.trim() || !form.faturacao_bruto) return;
+    db.atualizarComissao(c.id, {
+      profissional: form.profissional.trim(), mes: form.mes,
+      faturacao_bruto: Number(form.faturacao_bruto), ajuste: Number(form.ajuste) || 0, nota_ajuste: form.nota_ajuste,
+    });
+    setAEditar(false);
+  }
+
+  function apagar() {
+    if (window.confirm(`Apagar a comissão de ${c.profissional} (${c.mes})?`)) db.removerComissao(c.id);
+  }
+
+  if (aEditar) {
+    return (
+      <tr>
+        <td style={{ minWidth: 150 }}><CampoProfissional valor={form.profissional} onChange={v => setForm({ ...form, profissional: v })} db={db} /></td>
+        <td><input type="month" value={form.mes} onChange={e => setForm({ ...form, mes: e.target.value })} style={{ width: 140 }} /></td>
+        <td><input type="number" step="0.01" value={form.faturacao_bruto} onChange={e => setForm({ ...form, faturacao_bruto: e.target.value })} style={{ width: 100 }} /></td>
+        <td style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)' }}>{db.percentagemComissao(form.faturacao_bruto)}%</td>
+        <td>
+          <input type="number" step="0.01" value={form.ajuste} onChange={e => setForm({ ...form, ajuste: e.target.value })} placeholder="Ajuste €" style={{ width: 90, marginBottom: 4 }} />
+          <input value={form.nota_ajuste} onChange={e => setForm({ ...form, nota_ajuste: e.target.value })} placeholder="Motivo do ajuste" style={{ minWidth: 130 }} />
+        </td>
+        <td style={{ fontWeight: 700 }}>{(db.calcularComissao(Number(form.faturacao_bruto) || 0) + (Number(form.ajuste) || 0)).toFixed(2)} €</td>
+        <td></td>
+        <td>
+          <div className="acoes-linha">
+            <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={guardar}>Guardar</button>
+            <button className="btn-icon" title="Cancelar" onClick={() => setAEditar(false)}>×</button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <tr>
       <td>{c.profissional}</td>
       <td>{c.mes}</td>
       <td>{Number(c.faturacao_bruto).toFixed(2)} €</td>
       <td style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)' }}>{percentagem}%</td>
-      <td style={{ fontWeight: 700 }}>{valorComissao.toFixed(2)} €</td>
+      <td style={{ fontSize: 12.5 }}>
+        {ajuste !== 0 ? (
+          <span title={c.nota_ajuste || ''} style={{ color: ajuste < 0 ? 'var(--cor-alerta)' : 'var(--cor-sucesso)', fontWeight: 600 }}>
+            {ajuste > 0 ? '+' : ''}{ajuste.toFixed(2)} €{c.nota_ajuste ? <span style={{ display: 'block', fontWeight: 400, color: 'var(--cor-tinta-suave)', fontSize: 11 }}>{c.nota_ajuste}</span> : null}
+          </span>
+        ) : '—'}
+      </td>
+      <td style={{ fontWeight: 700 }}>
+        {valorFinal.toFixed(2)} €
+        {ajuste !== 0 && <span style={{ display: 'block', fontWeight: 400, fontSize: 11, color: 'var(--cor-tinta-suave)' }}>calculado: {calculado.toFixed(2)} €</span>}
+      </td>
       <td>
         <select value={canal} onChange={e => setCanal(e.target.value)} className="select-compacto">
           {CANAIS_PAGAMENTO_SAIDA.map(cn => <option key={cn} value={cn}>{cn}</option>)}
         </select>
       </td>
-      <td style={{ textAlign: 'right' }}><button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={() => db.marcarComissaoPaga(c.id, canal)}>Marcar paga</button></td>
+      <td>
+        <div className="acoes-linha">
+          <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={() => db.marcarComissaoPaga(c.id, canal)}>Marcar paga</button>
+          <button className="btn-icon" title="Editar / ajustar" onClick={() => setAEditar(true)}>✎</button>
+          <button className="btn-icon perigo" title="Apagar" onClick={apagar}>🗑</button>
+        </div>
+      </td>
     </tr>
+  );
+}
+
+function RegraComissao({ db }) {
+  const [form, setForm] = useState({ ...db.regraComissao });
+  const [ok, setOk] = useState(false);
+  function guardar() {
+    db.setRegraComissao({ limite: Number(form.limite) || 0, pctBase: Number(form.pctBase) || 0, pctAcima: Number(form.pctAcima) || 0, semIva: !!form.semIva });
+    setOk(true); setTimeout(() => setOk(false), 2000);
+  }
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid var(--cor-linha)', paddingTop: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, alignItems: 'end' }}>
+        <div><label>Limite de faturação bruta (€)</label><input type="number" step="0.01" value={form.limite} onChange={e => setForm({ ...form, limite: e.target.value })} /></div>
+        <div><label>% até ao limite</label><input type="number" step="0.1" value={form.pctBase} onChange={e => setForm({ ...form, pctBase: e.target.value })} /></div>
+        <div><label>% acima do limite</label><input type="number" step="0.1" value={form.pctAcima} onChange={e => setForm({ ...form, pctAcima: e.target.value })} /></div>
+        <div><label>Base de cálculo</label>
+          <select value={form.semIva ? '1' : '0'} onChange={e => setForm({ ...form, semIva: e.target.value === '1' })}>
+            <option value="1">Sem IVA (retira 23%)</option>
+            <option value="0">Com IVA (valor bruto)</option>
+          </select>
+        </div>
+        <div><button className="btn" type="button" onClick={guardar} style={{ width: '100%', justifyContent: 'center' }}>Guardar regra</button></div>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--cor-tinta-suave)', marginTop: 8 }}>A regra nova aplica-se a todas as comissões ainda por pagar. As já pagas mantêm o valor que foi lançado no Financeiro.</p>
+      {ok && <p style={{ color: 'var(--cor-sucesso)', fontSize: 13, marginTop: 6 }}>Regra guardada ✓</p>}
+    </div>
+  );
+}
+
+function DescontosFixos({ db }) {
+  const vazio = { profissional: '', valor: '', motivo: 'Adiantamento' };
+  const [form, setForm] = useState(vazio);
+  const [chave, setChave] = useState(0);
+  function adicionar() {
+    if (!form.profissional.trim() || !form.valor) return;
+    db.descontosFixosOps.add({ profissional: form.profissional.trim(), valor: Math.abs(Number(form.valor)) || 0, motivo: form.motivo, ativo: true });
+    setForm(vazio); setChave(k => k + 1);
+  }
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid var(--cor-linha)', paddingTop: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, alignItems: 'end', marginBottom: 14 }}>
+        <div style={{ minWidth: 160 }}><label>Profissional</label><CampoProfissional key={chave} valor={form.profissional} onChange={v => setForm({ ...form, profissional: v })} db={db} /></div>
+        <div><label>Desconto por mês (€)</label><input type="number" step="0.01" min="0" value={form.valor} onChange={e => setForm({ ...form, valor: e.target.value })} /></div>
+        <div style={{ minWidth: 150 }}><label>Motivo</label><input value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} placeholder="Ex: Adiantamento" /></div>
+        <div><button className="btn" type="button" onClick={adicionar} style={{ width: '100%', justifyContent: 'center' }}>Adicionar</button></div>
+      </div>
+      <table>
+        <thead><tr><th>Profissional</th><th>Motivo</th><th>Desconto / mês</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          {db.descontosFixos.map(d => (
+            <tr key={d.id}>
+              <td>{d.profissional}</td><td>{d.motivo || '—'}</td>
+              <td style={{ color: 'var(--cor-alerta)' }}>−{Number(d.valor).toFixed(2)} €</td>
+              <td>
+                <select value={d.ativo === false ? '0' : '1'} onChange={e => db.descontosFixosOps.update(d.id, { ativo: e.target.value === '1' })} className="select-compacto">
+                  <option value="1">Ativo</option><option value="0">Pausado</option>
+                </select>
+              </td>
+              <td><div className="acoes-linha"><button className="btn-icon perigo" title="Apagar" onClick={() => db.descontosFixosOps.remove(d.id)}>🗑</button></div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {db.descontosFixos.length === 0 && <p className="empty-state">Sem descontos fixos definidos.</p>}
+      <p style={{ fontSize: 12, color: 'var(--cor-tinta-suave)', marginTop: 8 }}>Ao lançar uma comissão, o desconto ativo da profissional entra sozinho no campo "Ajuste" — pode alterá-lo antes de adicionar (por exemplo, somar um desconto extra desse mês).</p>
+    </div>
   );
 }
 
 function Comissoes() {
   const { profile } = useAuth();
   const db = useDB();
-  const vazio = { profissional: '', mes: mesAtualStr(), faturacaoBruto: '' };
+  const vazio = { profissional: '', mes: mesAtualStr(), faturacaoBruto: '', ajuste: '', notaAjuste: '' };
   const [form, setForm] = useState(vazio);
+  const [chaveForm, setChaveForm] = useState(0);
   const [mesFiltro, setMesFiltro] = useState(mesAtualStr());
   const [verTodos, setVerTodos] = useState(false);
+  const [mostrarRegra, setMostrarRegra] = useState(false);
+  const [mostrarDescontos, setMostrarDescontos] = useState(false);
+  const r = db.regraComissao;
+
+  function escolherProfissional(v) {
+    const fixo = db.descontoFixoDe(v);
+    setForm(f => ({ ...f, profissional: v, ajuste: fixo.total ? String(-fixo.total) : '', notaAjuste: fixo.total ? fixo.motivos : '' }));
+  }
 
   function adicionar(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!form.profissional.trim() || !form.faturacaoBruto) return;
-    db.adicionarComissao({ ...form, faturacaoBruto: Number(form.faturacaoBruto), criadoPor: profile?.id });
+    db.adicionarComissao({ ...form, profissional: form.profissional.trim(), faturacaoBruto: Number(form.faturacaoBruto), ajuste: Number(form.ajuste) || 0, criadoPor: profile?.id });
     setForm(vazio);
+    setChaveForm(k => k + 1);
   }
 
+  const previa = form.faturacaoBruto ? db.calcularComissao(Number(form.faturacaoBruto)) + (Number(form.ajuste) || 0) : null;
   const pendentes = db.comissoes.filter(c => c.status === 'pendente' && (verTodos || c.mes === mesFiltro)).sort((a, b) => b.mes.localeCompare(a.mes) || a.profissional.localeCompare(b.profissional));
   const pagas = db.comissoes.filter(c => c.status === 'pago' && (verTodos || c.mes === mesFiltro)).sort((a, b) => b.mes.localeCompare(a.mes));
-  const totalPendente = pendentes.reduce((s, c) => s + db.calcularComissao(c.faturacao_bruto), 0);
+  const totalPendente = pendentes.reduce((s, c) => s + db.valorFinalComissao(c), 0);
 
   return (
     <div>
-      <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)', marginBottom: 16 }}>Comissão por profissional: até 2.460 € de faturação bruta no mês é 50% sobre tudo, acima disso é 60% sobre tudo — calculado sobre o valor sem IVA. As contas fecham no último dia do mês e o pagamento é feito no dia 1 do mês seguinte.</p>
+      <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)', marginBottom: 16 }}>Comissão por profissional: até {Number(r.limite).toFixed(2)} € de faturação bruta no mês é {r.pctBase}% sobre tudo, acima disso é {r.pctAcima}% sobre tudo — calculado sobre o valor {r.semIva ? 'sem IVA' : 'com IVA'}. As contas fecham no último dia do mês e o pagamento é feito no dia 1 do mês seguinte.</p>
       <FiltroMes mes={mesFiltro} setMes={setMesFiltro} verTodos={verTodos} setVerTodos={setVerTodos} />
+
+      <div className="card no-print" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ marginBottom: 4 }}>Regra de cálculo</h3>
+            <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)' }}>Limite, percentagens e se o cálculo é feito com ou sem IVA.</p>
+          </div>
+          <button className="btn btn-secundario" type="button" onClick={() => setMostrarRegra(s => !s)}>{mostrarRegra ? 'Fechar' : 'Alterar regra'}</button>
+        </div>
+        {mostrarRegra && <RegraComissao db={db} />}
+      </div>
+
+      <div className="card no-print" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ marginBottom: 4 }}>Descontos fixos</h3>
+            <p style={{ fontSize: 13, color: 'var(--cor-tinta-suave)' }}>Adiantamentos ou outros descontos que se repetem todos os meses para a mesma profissional.</p>
+          </div>
+          <button className="btn btn-secundario" type="button" onClick={() => setMostrarDescontos(s => !s)}>{mostrarDescontos ? 'Fechar' : `Gerir descontos${db.descontosFixos.length ? ` (${db.descontosFixos.length})` : ''}`}</button>
+        </div>
+        {mostrarDescontos && <DescontosFixos db={db} />}
+      </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginBottom: 14 }}>Nova comissão</h3>
         <form onSubmit={adicionar} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, alignItems: 'end' }}>
-          <div style={{ minWidth: 160 }}><label>Profissional</label><input value={form.profissional} onChange={e => setForm({ ...form, profissional: e.target.value })} placeholder="Nome" /></div>
+          <div style={{ minWidth: 160 }}><label>Profissional</label><CampoProfissional key={chaveForm} valor={form.profissional} onChange={escolherProfissional} db={db} /></div>
           <div><label>Mês</label><input type="month" value={form.mes} onChange={e => setForm({ ...form, mes: e.target.value })} /></div>
           <div><label>Faturação bruta (€)</label><input type="number" step="0.01" value={form.faturacaoBruto} onChange={e => setForm({ ...form, faturacaoBruto: e.target.value })} /></div>
+          <div><label>Ajuste (€)</label><input type="number" step="0.01" value={form.ajuste} onChange={e => setForm({ ...form, ajuste: e.target.value })} placeholder="Ex: -50 ou 20" />{form.profissional && db.descontoFixoDe(form.profissional).total > 0 && <span style={{ display: 'block', fontSize: 11, color: 'var(--cor-tinta-suave)', marginTop: 3 }}>inclui desconto fixo de {db.descontoFixoDe(form.profissional).total.toFixed(2)} €</span>}</div>
+          <div style={{ minWidth: 160 }}><label>Motivo do ajuste</label><input value={form.notaAjuste} onChange={e => setForm({ ...form, notaAjuste: e.target.value })} placeholder="Ex: adiantamento, produtos" /></div>
           <div><button className="btn" type="button" onClick={adicionar} style={{ width: '100%', justifyContent: 'center' }}>Adicionar</button></div>
         </form>
+        {previa !== null && (
+          <p style={{ fontSize: 13, marginTop: 10 }}>
+            Comissão a pagar: <strong>{previa.toFixed(2)} €</strong>
+            <span style={{ color: 'var(--cor-tinta-suave)' }}> ({db.percentagemComissao(Number(form.faturacaoBruto))}% = {db.calcularComissao(Number(form.faturacaoBruto)).toFixed(2)} €{Number(form.ajuste) ? ` ${Number(form.ajuste) > 0 ? '+' : '−'} ${Math.abs(Number(form.ajuste)).toFixed(2)} € de ajuste` : ''})</span>
+          </p>
+        )}
+        <p style={{ fontSize: 12, color: 'var(--cor-tinta-suave)', marginTop: 6 }}>Use um valor negativo para descontar (adiantamentos, produtos) e positivo para acrescentar (bónus).</p>
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
@@ -3616,7 +3866,7 @@ function Comissoes() {
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginBottom: 14 }}>Por pagar</h3>
         <table>
-          <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>%</th><th>Comissão</th><th>Canal</th><th></th></tr></thead>
+          <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>%</th><th>Ajuste</th><th>A pagar</th><th>Canal</th><th></th></tr></thead>
           <tbody>
             {pendentes.map(c => <ComissaoRow key={c.id} c={c} db={db} />)}
           </tbody>
@@ -3627,18 +3877,21 @@ function Comissoes() {
       {pagas.length > 0 && (
         <div className="card">
           <h3 style={{ marginBottom: 14 }}>Já pagas</h3>
+          <p style={{ fontSize: 12.5, color: 'var(--cor-tinta-suave)', marginBottom: 12 }}>Para corrigir uma comissão já paga, carregue em ↺ para desfazer o pagamento — volta para "Por pagar" e aí pode editar ou apagar.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
             {CANAIS_PAGAMENTO_SAIDA.map(canal => {
-              const total = pagas.filter(c => c.canal_pagamento === canal).reduce((s, c) => s + db.calcularComissao(c.faturacao_bruto), 0);
+              const total = pagas.filter(c => c.canal_pagamento === canal).reduce((s, c) => s + db.valorFinalComissao(c), 0);
               return <span key={canal} className="badge badge-ok">{canal}: {total.toFixed(2)} €</span>;
             })}
           </div>
           <table>
-            <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>Comissão</th><th>Canal</th><th></th></tr></thead>
+            <thead><tr><th>Profissional</th><th>Mês</th><th>Faturação bruta</th><th>Ajuste</th><th>Pago</th><th>Canal</th><th></th></tr></thead>
             <tbody>
               {pagas.map(c => (
                 <tr key={c.id}>
-                  <td>{c.profissional}</td><td>{c.mes}</td><td>{Number(c.faturacao_bruto).toFixed(2)} €</td><td>{db.calcularComissao(c.faturacao_bruto).toFixed(2)} €</td><td>{c.canal_pagamento || '—'}</td>
+                  <td>{c.profissional}</td><td>{c.mes}</td><td>{Number(c.faturacao_bruto).toFixed(2)} €</td>
+                  <td>{Number(c.ajuste) ? `${Number(c.ajuste) > 0 ? '+' : ''}${Number(c.ajuste).toFixed(2)} €` : '—'}</td>
+                  <td>{db.valorFinalComissao(c).toFixed(2)} €</td><td>{c.canal_pagamento || '—'}</td>
                   <td style={{ textAlign: 'right' }}><button className="btn-icon" title="Desfazer pagamento" onClick={() => db.desfazerComissaoPaga(c.id)}>↺</button></td>
                 </tr>
               ))}

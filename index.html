@@ -461,6 +461,13 @@ function useMockDB() {
   const [alicatesAfiar, setAlicatesAfiar] = useState([]);
   const [limiteGastosMensal, setLimiteGastosMensalLocal] = useState(1500);
   const [metaMensalVendas, setMetaMensalVendasLocal] = useState(4000);
+  // dias de trabalho (0 = domingo … 6 = sábado); por defeito terça a sábado
+  const [diasTrabalho, setDiasTrabalhoLocal] = useState([2, 3, 4, 5, 6]);
+  function setDiasTrabalho(lista) {
+    setDiasTrabalhoLocal(lista);
+    const mascara = lista.reduce((m, d) => m | (1 << d), 0);
+    supabase.from('configuracoes').upsert({ chave: 'dias_trabalho', valor: mascara }).then(({ error }) => { if (error) console.error('Supabase (configuracoes upsert):', error.message); });
+  }
   const [regraComissao, setRegraComissaoLocal] = useState({ limite: 2460, pctBase: 50, pctAcima: 60, semIva: true });
   function setRegraComissao(nova) {
     setRegraComissaoLocal(nova);
@@ -1085,6 +1092,8 @@ function useMockDB() {
         }
         if (limite) setLimiteGastosMensalLocal(Number(limite.valor));
         if (meta) setMetaMensalVendasLocal(Number(meta.valor));
+        const dt = config.find(c => c.chave === 'dias_trabalho');
+        if (dt && Number(dt.valor) > 0) setDiasTrabalhoLocal([0, 1, 2, 3, 4, 5, 6].filter(d => Number(dt.valor) & (1 << d)));
       }
       if (fornecs) setFornecedoresNomes(fornecs);
       if (descFixos) setDescontosFixos(descFixos);
@@ -1120,7 +1129,7 @@ function useMockDB() {
 
   return {
     produtos, listaCompras, compras, financeiro, vendas, conteudos, tarefas, fechosCaixa, pendentesPagamento, contasPagar, saidasEstoque, limiteGastosMensal, metaMensalVendas,
-    setLimiteGastosMensal, setMetaMensalVendas,
+    setLimiteGastosMensal, setMetaMensalVendas, diasTrabalho, setDiasTrabalho,
     canaisAquisicao, anuncios, parcerias, influencers, marketingOffline, indicacoes, estrategiasVendas, funisVendas, marcacoes, listaEspera, eventosCalendario, comissoes, despesasRecorrentes, investimentosExternos, colaboradorasNomes,
     canaisOps, anunciosOps, parceriasOps, influencersOps, offlineOps, indicacoesOps, estrategiasOps, funisOps, marcacoesOps, listaEsperaOps, eventosOps, despesasRecorrentesOps, gerarContasRecorrentesDoMes, investimentosOps, colaboradorasNomesOps, fornecedoresNomes, fornecedoresNomesOps,
     nomeColaborador, nomeProduto, unidadeProduto, produtosEstoqueBaixo, carregadoDoSupabase,
@@ -1572,7 +1581,12 @@ function Dashboard() {
   const hojeD = new Date();
   const ultimoDiaMes = new Date(hojeD.getFullYear(), hojeD.getMonth() + 1, 0).getDate();
   const diaAtualMes = hojeD.getDate();
-  const diasRestantesMes = Math.max(0, ultimoDiaMes - diaAtualMes);
+  // dias úteis que ainda faltam no mês (hoje conta enquanto ainda não houver fecho de caixa)
+  const jaFechouHoje = db.fechosCaixa.some(f => f.data === hojeStr);
+  let diasRestantesMes = 0;
+  for (let dia = diaAtualMes + (jaFechouHoje ? 1 : 0); dia <= ultimoDiaMes; dia++) {
+    if (db.diasTrabalho.includes(new Date(hojeD.getFullYear(), hojeD.getMonth(), dia).getDay())) diasRestantesMes++;
+  }
 
   const faltaParaMeta = Math.max(0, db.metaMensalVendas - totalVendasMes);
   const progressoMeta = db.metaMensalVendas > 0 ? Math.min(100, (totalVendasMes / db.metaMensalVendas) * 100) : 0;
@@ -1615,11 +1629,24 @@ function Dashboard() {
           <p style={{ fontSize: 13 }}><strong>{totalVendasMes.toFixed(2)} €</strong> feitos de {db.metaMensalVendas.toFixed(2)} € ({progressoMeta.toFixed(0)}%)</p>
           {faltaParaMeta > 0 ? (
             <p style={{ fontSize: 13, color: 'var(--cor-vinho)', fontWeight: 600, marginTop: 4 }}>
-              Faltam <strong>{faltaParaMeta.toFixed(2)} €</strong> — {diasRestantesMes > 0 ? `${mediaNecessariaPorDia.toFixed(2)} €/dia nos próximos ${diasRestantesMes} dias` : 'último dia do mês'}
+              Faltam <strong>{faltaParaMeta.toFixed(2)} €</strong> — {diasRestantesMes > 0 ? `${mediaNecessariaPorDia.toFixed(2)} €/dia nos ${diasRestantesMes} dia${diasRestantesMes === 1 ? '' : 's'} de trabalho que faltam` : 'já não há dias de trabalho este mês'}
             </p>
           ) : (
             <p style={{ fontSize: 13, color: 'var(--cor-sucesso)', fontWeight: 600, marginTop: 4 }}>Meta atingida ✓</p>
           )}
+          <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--cor-tinta-suave)', marginRight: 4 }}>Dias de trabalho:</span>
+            {[1, 2, 3, 4, 5, 6, 0].map(d => {
+              const ativo = db.diasTrabalho.includes(d);
+              return (
+                <button key={d} type="button"
+                  onClick={() => db.setDiasTrabalho(ativo ? db.diasTrabalho.filter(x => x !== d) : [...db.diasTrabalho, d])}
+                  style={{ border: 'none', cursor: 'pointer', borderRadius: 20, padding: '3px 9px', fontSize: 11, fontWeight: 700, background: ativo ? 'var(--cor-vinho)' : '#F1ECE8', color: ativo ? '#fff' : 'var(--cor-tinta-suave)' }}>
+                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d]}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="card" style={{ borderColor: excedeuLimite ? 'var(--cor-alerta)' : 'var(--cor-linha)', background: excedeuLimite ? '#FBEDE7' : '#fff' }}>

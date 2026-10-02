@@ -673,24 +673,44 @@ function useMockDB() {
     return d.toISOString().slice(0, 10);
   }
 
-  function marcarComissaoPaga(id, canalPagamento) {
+  function descricaoComissao(item) { return `Comissão ${item.profissional} — ${item.mes}`; }
+
+  // movimentos do Financeiro que pagaram esta comissão (um por cada forma de pagamento)
+  function movimentosComissao(item) {
+    const desc = descricaoComissao(item);
+    return financeiro.filter(m => m.origem === 'comissao' && (m.descricao === desc || (item.movimento_ids || []).includes(m.id) || m.id === item.movimento_id));
+  }
+
+  function pagamentosComissao(item) {
+    const movs = movimentosComissao(item);
+    if (movs.length > 0) return movs.map(m => ({ canal: m.canal_pagamento || '—', valor: Number(m.valor) }));
+    return [{ canal: item.canal_pagamento || '—', valor: valorFinalComissao(item) }];
+  }
+
+  // pagamentos: texto com um só canal, ou lista [{ canal, valor }] quando é pago com vários métodos
+  function marcarComissaoPaga(id, pagamentos) {
     const item = comissoes.find(c => c.id === id);
     if (!item) return;
     const valorComissao = valorFinalComissao(item);
+    const lista = (typeof pagamentos === 'string' ? [{ canal: pagamentos, valor: valorComissao }] : pagamentos)
+      .map(p => ({ canal: p.canal, valor: Number(p.valor) || 0 }))
+      .filter(p => p.valor > 0);
+    if (lista.length === 0) return;
     const dataPagamento = primeiroDiaProximoMes(item.mes);
-    const movId = uid();
-    setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: canalPagamento, movimento_id: movId } : x));
-    supaUpdateComissao(id, { status: 'pago', canal_pagamento: canalPagamento });
-    const mov = { id: movId, tipo: 'saida', categoria: 'Comissão', valor: valorComissao, descricao: `Comissão ${item.profissional} — ${item.mes}`, origem: 'comissao', canal_pagamento: canalPagamento, criado_por: item.criado_por, data: dataPagamento };
-    setFinanceiro(f => [mov, ...f]);
-    supaInsertFinanceiro(mov);
+    const resumoCanal = lista.map(p => p.canal).join(' + ');
+    const movs = lista.map(p => ({ id: uid(), tipo: 'saida', categoria: 'Comissão', valor: p.valor, descricao: descricaoComissao(item), origem: 'comissao', canal_pagamento: p.canal, criado_por: item.criado_por, data: dataPagamento }));
+    setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pago', canal_pagamento: resumoCanal, movimento_id: movs[0].id, movimento_ids: movs.map(m => m.id) } : x));
+    supaUpdateComissao(id, { status: 'pago', canal_pagamento: resumoCanal });
+    setFinanceiro(f => [...movs, ...f]);
+    movs.forEach(m => supaInsertFinanceiro(m));
   }
 
   function desfazerComissaoPaga(id) {
     const item = comissoes.find(c => c.id === id);
     if (!item) return;
-    if (item.movimento_id) { setFinanceiro(f => f.filter(m => m.id !== item.movimento_id)); supaDeleteFinanceiro(item.movimento_id); }
-    setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pendente', canal_pagamento: null, movimento_id: null } : x));
+    const ids = movimentosComissao(item).map(m => m.id);
+    if (ids.length) { setFinanceiro(f => f.filter(m => !ids.includes(m.id))); ids.forEach(mid => supaDeleteFinanceiro(mid)); }
+    setComissoes(c => c.map(x => x.id === id ? { ...x, status: 'pendente', canal_pagamento: null, movimento_id: null, movimento_ids: null } : x));
     supaUpdateComissao(id, { status: 'pendente', canal_pagamento: null });
   }
 
@@ -1107,7 +1127,7 @@ function useMockDB() {
     pedirReposicao, cancelarPedido, removerItemLista, registarCompra, atualizarCompra, confirmarChegadaCompra, lancarMovimentoManual, atualizarMovimentoFinanceiro, removerMovimentoFinanceiro, registarVenda, lancarFechoCaixa, adicionarProdutoEmFalta, registarSaidaEstoque, confirmarRecebimento,
     entregasEstoque, entregarDoEstoque, confirmarRecebimentoEstoque, resolverPedidoNaSaida,
     alicatesAfiar, pedirAfiacao, marcarEntregueAmolador, marcarDevolvidoAmolador, confirmarRecebimentoAfiacao, quantidadeAfiadaUltimos3Meses,
-    adicionarComissao, atualizarComissao, removerComissao, marcarComissaoPaga, desfazerComissaoPaga, calcularComissao, valorFinalComissao, totalDescontos, percentagemComissao, regraComissao, setRegraComissao, descontosFixos, descontosFixosOps, descontoFixoDe,
+    adicionarComissao, atualizarComissao, removerComissao, marcarComissaoPaga, desfazerComissaoPaga, pagamentosComissao, calcularComissao, valorFinalComissao, totalDescontos, percentagemComissao, regraComissao, setRegraComissao, descontosFixos, descontosFixosOps, descontoFixoDe,
     adicionarPendente, marcarPendenteComoPago, desfazerPendentePago, adicionarContaPagar, atualizarContaPagar, removerContaPagar, marcarContaPagaComoPaga, desfazerContaPaga,
     criarConteudo, atualizarStatusConteudo, criarTarefa, atualizarStatusTarefa,
     modelosSemanais, adicionarModeloSemanal, removerModeloSemanal, atualizarModeloSemanal,
@@ -3691,6 +3711,7 @@ function ListaDescontosResumo({ c }) {
 
 function ComissaoRow({ c, db }) {
   const [canal, setCanal] = useState(CANAIS_PAGAMENTO_SAIDA[0]);
+  const [partes, setPartes] = useState({});
   const [aEditar, setAEditar] = useState(false);
   const [form, setForm] = useState(null);
   const calculado = db.calcularComissao(c.faturacao_bruto);
@@ -3748,7 +3769,26 @@ function ComissaoRow({ c, db }) {
     );
   }
 
+  const dividir = canal === '__dividir__';
+  const somaDividida = Object.values(partes).reduce((s, v) => s + (Number(v) || 0), 0);
+  const falta = Math.round((valorFinal - somaDividida) * 100) / 100;
+  const contaCerta = Math.abs(falta) < 0.01 && somaDividida > 0;
+
+  function pagar() {
+    if (!dividir) { db.marcarComissaoPaga(c.id, canal); return; }
+    if (!contaCerta) return;
+    db.marcarComissaoPaga(c.id, CANAIS_PAGAMENTO_SAIDA.map(cn => ({ canal: cn, valor: Number(partes[cn]) || 0 })));
+    setPartes({}); setCanal(CANAIS_PAGAMENTO_SAIDA[0]);
+  }
+
+  function completarCom(cn) {
+    const outros = CANAIS_PAGAMENTO_SAIDA.filter(x => x !== cn).reduce((s, x) => s + (Number(partes[x]) || 0), 0);
+    const resto = Math.max(0, Math.round((valorFinal - outros) * 100) / 100);
+    setPartes({ ...partes, [cn]: String(resto) });
+  }
+
   return (
+    <>
     <tr>
       <td>{c.profissional}</td>
       <td>{c.mes}</td>
@@ -3762,16 +3802,40 @@ function ComissaoRow({ c, db }) {
       <td>
         <select value={canal} onChange={e => setCanal(e.target.value)} className="select-compacto">
           {CANAIS_PAGAMENTO_SAIDA.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+          <option value="__dividir__">Vários métodos…</option>
         </select>
       </td>
       <td>
         <div className="acoes-linha">
-          <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={() => db.marcarComissaoPaga(c.id, canal)}>Marcar paga</button>
+          {!dividir && <button className="btn" style={{ padding: '7px 12px', fontSize: 12.5 }} onClick={pagar}>Marcar paga</button>}
           <button className="btn-icon" title="Editar / juntar descontos" onClick={abrirEdicao}>✎</button>
           <button className="btn-icon perigo" title="Apagar" onClick={apagar}>🗑</button>
         </div>
       </td>
     </tr>
+    {dividir && (
+      <tr>
+        <td colSpan={8} style={{ textAlign: 'left', background: '#FBF9F6' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--cor-tinta-suave)', marginBottom: 8 }}>Dividir o pagamento de {c.profissional} ({valorFinal.toFixed(2)} €)</p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            {CANAIS_PAGAMENTO_SAIDA.map(cn => (
+              <div key={cn} style={{ width: 150 }}>
+                <label>{cn} (€)</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <input type="number" step="0.01" min="0" value={partes[cn] || ''} onChange={e => setPartes({ ...partes, [cn]: e.target.value })} />
+                  <button className="btn-icon" type="button" title="Pôr aqui o que falta" onClick={() => completarCom(cn)}>⇢</button>
+                </div>
+              </div>
+            ))}
+            <button className="btn" type="button" disabled={!contaCerta} style={{ padding: '9px 14px', fontSize: 12.5, opacity: contaCerta ? 1 : 0.5 }} onClick={pagar}>Confirmar pagamento</button>
+          </div>
+          <p style={{ fontSize: 12.5, marginTop: 8, fontWeight: 600, color: contaCerta ? 'var(--cor-sucesso)' : 'var(--cor-alerta)' }}>
+            {contaCerta ? '✓ A soma bate certo com o valor a pagar' : falta > 0 ? `Faltam ${falta.toFixed(2)} € para chegar ao valor a pagar` : `Passou ${(-falta).toFixed(2)} € do valor a pagar`}
+          </p>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
@@ -3944,7 +4008,7 @@ function Comissoes() {
           <p style={{ fontSize: 12.5, color: 'var(--cor-tinta-suave)', marginBottom: 12 }}>Para corrigir uma comissão já paga, carregue em ↺ para desfazer o pagamento — volta para "Por pagar" e aí pode editar ou apagar.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
             {CANAIS_PAGAMENTO_SAIDA.map(canal => {
-              const total = pagas.filter(c => c.canal_pagamento === canal).reduce((s, c) => s + db.valorFinalComissao(c), 0);
+              const total = pagas.reduce((s, c) => s + db.pagamentosComissao(c).filter(p => p.canal === canal).reduce((t, p) => t + p.valor, 0), 0);
               return <span key={canal} className="badge badge-ok">{canal}: {total.toFixed(2)} €</span>;
             })}
           </div>
@@ -3955,7 +4019,8 @@ function Comissoes() {
                 <tr key={c.id}>
                   <td>{c.profissional}</td><td>{c.mes}</td><td>{Number(c.faturacao_bruto).toFixed(2)} €</td>
                   <td><ListaDescontosResumo c={c} /></td>
-                  <td>{db.valorFinalComissao(c).toFixed(2)} €</td><td>{c.canal_pagamento || '—'}</td>
+                  <td>{db.valorFinalComissao(c).toFixed(2)} €</td>
+                  <td style={{ fontSize: 12 }}>{(() => { const ps = db.pagamentosComissao(c); return ps.length > 1 ? ps.map((p, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>{p.canal}: {p.valor.toFixed(2)} €</div>) : ps[0].canal; })()}</td>
                   <td style={{ textAlign: 'right' }}><button className="btn-icon" title="Desfazer pagamento" onClick={() => db.desfazerComissaoPaga(c.id)}>↺</button></td>
                 </tr>
               ))}
